@@ -1,6 +1,5 @@
 package com.example.addon;
 
-import com.example.addon.modules.XbowCart;
 import meteordevelopment.meteorclient.addons.MeteorAddon;
 import meteordevelopment.meteorclient.systems.modules.Category;
 import meteordevelopment.meteorclient.systems.modules.Modules;
