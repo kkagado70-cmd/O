@@ -1,6 +1,5 @@
 package com.example.addon.modules;
 
-import com.example.addon.AddonTemplate;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.systems.modules.Categories;
 import meteordevelopment.meteorclient.systems.modules.Module;
@@ -27,7 +26,7 @@ public class XbowCart extends Module {
     private int previousSlot = -1;
 
     public XbowCart() {
-        super(Categories.Combat, "xbow-cart", "Ativa o combo de Xbow Cart ao olhar para baixo segurando o trilho.");
+        super(Categories.Combat, "xbow-cart", "Ativa o combo de Xbow Cart ao olhar para o chao com o trilho.");
     }
 
     @Override
@@ -44,7 +43,6 @@ public class XbowCart extends Module {
     private void onTick(TickEvent.Pre event) {
         if (mc.player == null || mc.world == null) return;
 
-        // Condição: Olhar para baixo (pitch >= 70) com o trilho na mão principal
         boolean isLookingDown = mc.player.getPitch() >= 70.0f;
         ItemStack mainHand = mc.player.getMainHandStack();
         boolean isHoldingRail = mainHand.getItem() instanceof RailItem;
@@ -124,34 +122,5 @@ public class XbowCart extends Module {
         this.stage = Stage.IDLE;
         this.previousSlot = -1;
         this.tickDelay = 0;
-    }
-}        .description("The color of the marker.")
-        .defaultValue(Color.MAGENTA)
-        .build()
-    );
-
-    /**
-     * The {@code name} parameter should be in kebab-case.
-     */
-    public ModuleExample() {
-        super(AddonTemplate.CATEGORY, "world-origin", "An example module that highlights the center of the world.");
-    }
-
-    /**
-     * Example event handling method.
-     * Requires {@link AddonTemplate#getPackage()} to be setup correctly, otherwise the game will crash whenever the module is enabled.
-     */
-    @EventHandler
-    private void onRender3d(Render3DEvent event) {
-        // Create & expand the marker object
-        AABB marker = new AABB(BlockPos.ZERO);
-        marker = marker.expandTowards(
-            scale.get() * marker.getXsize(),
-            scale.get() * marker.getYsize(),
-            scale.get() * marker.getZsize()
-        );
-
-        // Render the marker based on the color setting
-        event.renderer.box(marker, color.get(), color.get(), ShapeMode.Both, 0);
     }
 }
