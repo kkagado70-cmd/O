@@ -15,24 +15,12 @@ public class AddonTemplate extends MeteorAddon {
     public void onInitialize() {
         LOG.info("Inicializando Xbow Cart Addon...");
 
-        // Registra o seu modulo dentro do Meteor Client
+        // Registra o seu modulo no Meteor
         Modules.get().add(new XbowCart());
     }
 
     @Override
     public String getPackage() {
         return "com.example.addon";
-    }
-}        Modules.registerCategory(CATEGORY);
-    }
-
-    @Override
-    public String getPackage() {
-        return "com.example.addon";
-    }
-
-    @Override
-    public GithubRepo getRepo() {
-        return new GithubRepo("MeteorDevelopment", "meteor-addon-template");
     }
 }
