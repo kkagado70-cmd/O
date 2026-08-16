@@ -7,6 +7,7 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.meteorclient.utils.player.FindItemResult;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
+import meteordevelopment.meteorclient.utils.player.Rotations;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -14,15 +15,19 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.CrossbowItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.BaseRailBlock;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+
+import java.util.concurrent.ThreadLocalRandom;
 
 public class XbowCart extends Module {
 
     public enum Stage {
         IDLE,
         PLACE_RAIL,
+        AWAIT_RAIL,
         PLACE_CART,
         LIGHT_FIRE,
         AIM_AND_SHOOT
@@ -30,68 +35,54 @@ public class XbowCart extends Module {
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
-    private final Setting<Boolean> smoothAim = sgGeneral.add(new BoolSetting.Builder()
-        .name("smooth-aim")
-        .description("Desliza a mira suavemente para parecer 100% legit em gravacoes.")
+    private final Setting<Boolean> grimBypass = sgGeneral.add(new BoolSetting.Builder()
+        .name("grim-polar-bypass")
+        .description("Verifica confirmacao de blocos no servidor e aplica timing humanizado com variacao.")
         .defaultValue(true)
         .build()
     );
 
-    private final Setting<Double> aimSpeed = sgGeneral.add(new DoubleSetting.Builder()
-        .name("aim-speed")
-        .description("Velocidade da mira suave (graus por tick).")
-        .defaultValue(35.0)
-        .min(10.0)
-        .max(90.0)
-        .sliderRange(10.0, 90.0)
-        .visible(smoothAim::get)
-        .build()
-    );
-
-    private final Setting<Boolean> preferCharged = sgGeneral.add(new BoolSetting.Builder()
-        .name("prefer-charged-xbow")
-        .description("Sempre prioriza a Besta carregada na hotbar.")
-        .defaultValue(true)
-        .build()
-    );
-
-    private final Setting<Integer> delay = sgGeneral.add(new IntSetting.Builder()
-        .name("delay-ticks")
-        .description("Delay em ticks entre cada acao.")
+    private final Setting<Integer> minDelay = sgGeneral.add(new IntSetting.Builder()
+        .name("min-delay-ticks")
+        .description("Delay minimo entre acoes (1 tick = 50ms).")
         .defaultValue(1)
-        .min(0)
-        .max(5)
-        .sliderRange(0, 5)
+        .min(1)
+        .max(3)
+        .sliderRange(1, 3)
         .build()
     );
 
-    private final Setting<Boolean> simulateClicks = sgGeneral.add(new BoolSetting.Builder()
-        .name("simulate-clicks")
-        .description("Ativa o registro de cliques no Keystrokes e CPS.")
-        .defaultValue(true)
+    private final Setting<Integer> maxDelay = sgGeneral.add(new IntSetting.Builder()
+        .name("max-delay-ticks")
+        .description("Delay maximo para variacao humana (impede flags de cadencia fixa).")
+        .defaultValue(2)
+        .min(1)
+        .max(4)
+        .sliderRange(1, 4)
         .build()
     );
 
     private final Setting<Boolean> autoShoot = sgGeneral.add(new BoolSetting.Builder()
         .name("auto-shoot")
-        .description("Dispara a besta automaticamente.")
+        .description("Dispara a besta automaticamente apos confirmar o alinhamento da mira.")
         .defaultValue(true)
         .build()
     );
 
     private final Setting<Boolean> swapBack = sgGeneral.add(new BoolSetting.Builder()
         .name("swap-back")
-        .description("Restaura o item original apos o combo.")
+        .description("Restaura o item original apos o termino do combo.")
         .defaultValue(true)
         .build()
     );
 
     private Stage stage = Stage.IDLE;
     private int tickDelay = 0;
+    private int timeoutTicks = 0;
     private BlockHitResult targetBlockHit = null;
 
     public XbowCart() {
-        super(Categories.Combat, "xbow-cart", "Xbow Cart com mira suave ultra-legit para gravacoes e prioridade de Besta.");
+        super(Categories.Combat, "xbow-cart", "Xbow Cart com sincronizacao de pacotes e bypass de GrimAC/Polar.");
     }
 
     @Override
@@ -118,6 +109,12 @@ public class XbowCart extends Module {
         }
 
         if (stage != Stage.IDLE) {
+            timeoutTicks++;
+            if (timeoutTicks > 20) { // Se demorar mais de 1 segundo por lag de rede, cancela com seguranca
+                reset(true);
+                return;
+            }
+
             if (tickDelay > 0) {
                 tickDelay--;
                 return;
@@ -131,11 +128,16 @@ public class XbowCart extends Module {
     }
 
     private FindItemResult findBestCrossbow() {
-        if (preferCharged.get()) {
-            FindItemResult charged = InvUtils.findInHotbar(stack -> stack.is(Items.CROSSBOW) && CrossbowItem.isCharged(stack));
-            if (charged.found()) return charged;
-        }
+        FindItemResult charged = InvUtils.findInHotbar(stack -> stack.is(Items.CROSSBOW) && CrossbowItem.isCharged(stack));
+        if (charged.found()) return charged;
         return InvUtils.findInHotbar(stack -> stack.is(Items.CROSSBOW));
+    }
+
+    private int getRandomDelay() {
+        if (!grimBypass.get()) return minDelay.get();
+        int min = Math.min(minDelay.get(), maxDelay.get());
+        int max = Math.max(minDelay.get(), maxDelay.get());
+        return ThreadLocalRandom.current().nextInt(min, max + 1);
     }
 
     private void startXbowCart(BlockHitResult hitResult) {
@@ -143,22 +145,12 @@ public class XbowCart extends Module {
         FindItemResult flint = InvUtils.findInHotbar(Items.FLINT_AND_STEEL);
         FindItemResult xbow = findBestCrossbow();
 
-        if (!cart.found()) {
-            ChatUtils.warning("XbowCart: Falta Carrinho de TNT na hotbar!");
-            return;
-        }
-        if (!flint.found()) {
-            ChatUtils.warning("XbowCart: Falta Isqueiro na hotbar!");
-            return;
-        }
-        if (!xbow.found()) {
-            ChatUtils.warning("XbowCart: Falta Besta na hotbar!");
-            return;
-        }
+        if (!cart.found() || !flint.found() || !xbow.found()) return;
 
         this.targetBlockHit = hitResult;
         this.stage = Stage.PLACE_RAIL;
         this.tickDelay = 0;
+        this.timeoutTicks = 0;
     }
 
     private void executeStage() {
@@ -171,56 +163,63 @@ public class XbowCart extends Module {
         Direction clickedFace = targetBlockHit.getDirection();
         BlockPos placedRailPos = groundPos.relative(clickedFace);
 
-        // 1. Posicao do Trilho
+        // 1. Posição do Trilho
         BlockHitResult railHit = new BlockHitResult(targetBlockHit.getLocation(), clickedFace, groundPos, false);
 
-        // 2. Posicao do Carrinho de TNT
+        // 2. Posição do Carrinho de TNT
         Vec3 railCenter = new Vec3(placedRailPos.getX() + 0.5, placedRailPos.getY() + 0.1, placedRailPos.getZ() + 0.5);
         BlockHitResult cartHit = new BlockHitResult(railCenter, Direction.UP, placedRailPos, false);
 
-        // 3. Posicao do Fogo adaptativa (Chão ou Lateral de Pilar)
+        // 3. Posição do Fogo
         Direction toPlayer = mc.player.getDirection().getOpposite();
-        BlockHitResult fireHit;
-
-        boolean isHighPillar = groundPos.getY() >= mc.player.getBlockY() + 1;
-        if (isHighPillar) {
-            // Se for um pilar alto, acende na lateral do bloco voltada para o jogador
-            fireHit = new BlockHitResult(new Vec3(groundPos.getX() + 0.5, groundPos.getY() + 0.5, groundPos.getZ() + 0.5), toPlayer, groundPos, false);
-        } else {
-            // Se for no chão, acende no bloco entre você e o trilho
-            BlockPos fireBasePos = groundPos.relative(toPlayer);
-            fireHit = new BlockHitResult(new Vec3(fireBasePos.getX() + 0.5, fireBasePos.getY() + 1.0, fireBasePos.getZ() + 0.5), Direction.UP, fireBasePos, false);
-        }
+        BlockPos fireBasePos = groundPos.relative(toPlayer);
+        BlockHitResult fireHit = new BlockHitResult(
+            new Vec3(fireBasePos.getX() + 0.5, fireBasePos.getY() + 1.0, fireBasePos.getZ() + 0.5),
+            Direction.UP,
+            fireBasePos,
+            false
+        );
 
         switch (stage) {
             case PLACE_RAIL:
                 FindItemResult rail = InvUtils.findInHotbar(this::isRail);
                 if (rail.found()) {
                     InvUtils.swap(rail.slot(), true);
-                    interact(railHit);
+                    interactBlock(railHit);
                 }
-                stage = Stage.PLACE_CART;
-                tickDelay = delay.get();
+                // Se o modo Grim/Polar estiver ativo, aguarda o trilho existir no mundo
+                stage = grimBypass.get() ? Stage.AWAIT_RAIL : Stage.PLACE_CART;
+                tickDelay = getRandomDelay();
+                break;
+
+            case AWAIT_RAIL:
+                // Anti-Ghost: Só coloca o carrinho se o trilho REALMENTE estiver presente no mundo
+                if (mc.level.getBlockState(placedRailPos).getBlock() instanceof BaseRailBlock) {
+                    stage = Stage.PLACE_CART;
+                    tickDelay = 0;
+                } else {
+                    tickDelay = 1; // Espera o próximo tick de rede
+                }
                 break;
 
             case PLACE_CART:
                 FindItemResult cart = InvUtils.findInHotbar(Items.TNT_MINECART);
                 if (cart.found()) {
                     InvUtils.swap(cart.slot(), false);
-                    interact(cartHit);
+                    interactBlock(cartHit);
                 }
                 stage = Stage.LIGHT_FIRE;
-                tickDelay = delay.get();
+                tickDelay = getRandomDelay();
                 break;
 
             case LIGHT_FIRE:
                 FindItemResult flint = InvUtils.findInHotbar(Items.FLINT_AND_STEEL);
                 if (flint.found()) {
                     InvUtils.swap(flint.slot(), false);
-                    interact(fireHit);
+                    interactBlock(fireHit);
                 }
                 stage = Stage.AIM_AND_SHOOT;
-                tickDelay = delay.get();
+                tickDelay = getRandomDelay();
                 break;
 
             case AIM_AND_SHOOT:
@@ -228,7 +227,7 @@ public class XbowCart extends Module {
                 if (xbow.found()) {
                     InvUtils.swap(xbow.slot(), false);
 
-                    // Calculo de mira na metade inferior da TNT atraves do fogo
+                    // Trajetória calculada para a base da TNT através do fogo
                     Vec3 eyePos = mc.player.getEyePosition();
                     Vec3 cartTarget = new Vec3(placedRailPos.getX() + 0.5, placedRailPos.getY() + 0.15, placedRailPos.getZ() + 0.5);
 
@@ -240,20 +239,14 @@ public class XbowCart extends Module {
                     float targetYaw = (float) Math.toDegrees(Math.atan2(dz, dx)) - 90.0f;
                     float targetPitch = (float) -Math.toDegrees(Math.atan2(dy, dist));
 
-                    if (smoothAim.get()) {
-                        boolean aligned = smoothRotate(targetYaw, targetPitch);
-                        if (!aligned) {
-                            tickDelay = 1; // Continua girando suavemente ate alinhar
-                            return;
+                    // Rotação com curva GCD legítima do Meteor antes de enviar o disparo
+                    Rotations.rotate(targetYaw, targetPitch, 100, () -> {
+                        if (autoShoot.get()) {
+                            shootCrossbow();
                         }
-                    } else {
-                        mc.player.setYRot(targetYaw);
-                        mc.player.setXRot(targetPitch);
-                    }
-
-                    if (autoShoot.get()) {
-                        interact(null);
-                    }
+                        reset(swapBack.get());
+                    });
+                    return;
                 }
                 reset(swapBack.get());
                 break;
@@ -264,49 +257,14 @@ public class XbowCart extends Module {
         }
     }
 
-    private boolean smoothRotate(float targetYaw, float targetPitch) {
-        float currentYaw = mc.player.getYRot();
-        float currentPitch = mc.player.getXRot();
-
-        float yawDiff = wrapDegrees(targetYaw - currentYaw);
-        float pitchDiff = targetPitch - currentPitch;
-
-        float step = aimSpeed.get().floatValue();
-
-        if (Math.abs(yawDiff) <= step && Math.abs(pitchDiff) <= step) {
-            mc.player.setYRot(targetYaw);
-            mc.player.setXRot(targetPitch);
-            return true;
-        }
-
-        mc.player.setYRot(currentYaw + Math.signum(yawDiff) * Math.min(Math.abs(yawDiff), step));
-        mc.player.setXRot(currentPitch + Math.signum(pitchDiff) * Math.min(Math.abs(pitchDiff), step));
-        return false;
-    }
-
-    private float wrapDegrees(float value) {
-        float f = value % 360.0f;
-        if (f >= 180.0f) f -= 360.0f;
-        if (f < -180.0f) f += 360.0f;
-        return f;
-    }
-
-    private void interact(BlockHitResult hitResult) {
-        if (simulateClicks.get() && mc.options != null && mc.options.keyUse != null) {
-            mc.options.keyUse.setDown(true);
-        }
-
-        if (hitResult != null) {
-            mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hitResult);
-        } else {
-            mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
-        }
-
+    private void interactBlock(BlockHitResult hitResult) {
+        mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hitResult);
         mc.player.swing(InteractionHand.MAIN_HAND);
+    }
 
-        if (simulateClicks.get() && mc.options != null && mc.options.keyUse != null) {
-            mc.options.keyUse.setDown(false);
-        }
+    private void shootCrossbow() {
+        mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
+        mc.player.swing(InteractionHand.MAIN_HAND);
     }
 
     private void reset(boolean restoreSlot) {
@@ -316,5 +274,6 @@ public class XbowCart extends Module {
         this.stage = Stage.IDLE;
         this.targetBlockHit = null;
         this.tickDelay = 0;
+        this.timeoutTicks = 0;
     }
 }
