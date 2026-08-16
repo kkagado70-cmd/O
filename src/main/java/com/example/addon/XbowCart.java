@@ -70,7 +70,6 @@ public class XbowCart extends Module {
     private Stage stage = Stage.IDLE;
     private int tickDelay = 0;
     private BlockHitResult targetBlockHit = null;
-    private int originalSlot = -1;
 
     public XbowCart() {
         super(Categories.Combat, "xbow-cart", "Xbow Cart com calculo automatico de angulo e trajetoria atraves do fogo.");
@@ -131,7 +130,6 @@ public class XbowCart extends Module {
         }
 
         this.targetBlockHit = hitResult;
-        this.originalSlot = mc.player.getInventory().selected;
         this.stage = Stage.PLACE_RAIL;
         this.tickDelay = 0;
     }
@@ -167,7 +165,7 @@ public class XbowCart extends Module {
             case PLACE_RAIL:
                 FindItemResult rail = InvUtils.findInHotbar(this::isRail);
                 if (rail.found()) {
-                    InvUtils.swap(rail.slot(), false);
+                    InvUtils.swap(rail.slot(), true);
                     interact(railHit);
                 }
                 stage = Stage.PLACE_CART;
@@ -248,12 +246,11 @@ public class XbowCart extends Module {
     }
 
     private void reset(boolean restoreSlot) {
-        if (restoreSlot && originalSlot != -1 && mc.player != null) {
-            InvUtils.swap(originalSlot, false);
+        if (restoreSlot && mc.player != null) {
+            InvUtils.swapBack();
         }
         this.stage = Stage.IDLE;
         this.targetBlockHit = null;
-        this.originalSlot = -1;
         this.tickDelay = 0;
     }
 }
