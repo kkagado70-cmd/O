@@ -9,7 +9,6 @@ import meteordevelopment.orbit.EventHandler;
 import net.minecraft.world.item.CrossbowItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.RailItem;
 
 public class XbowCart extends Module {
 
@@ -23,7 +22,6 @@ public class XbowCart extends Module {
 
     private Stage stage = Stage.IDLE;
     private int tickDelay = 0;
-    private int previousSlot = -1;
 
     public XbowCart() {
         super(Categories.Combat, "xbow-cart", "Ativa o combo de Xbow Cart ao olhar para o chao com o trilho.");
@@ -45,7 +43,7 @@ public class XbowCart extends Module {
 
         boolean isLookingDown = mc.player.getXRot() >= 70.0f;
         ItemStack mainHand = mc.player.getMainHandItem();
-        boolean isHoldingRail = mainHand.getItem() instanceof RailItem;
+        boolean isHoldingRail = isRail(mainHand);
 
         if (isLookingDown && isHoldingRail && stage == Stage.IDLE) {
             startXbowCart();
@@ -60,6 +58,10 @@ public class XbowCart extends Module {
         }
     }
 
+    private boolean isRail(ItemStack stack) {
+        return stack.is(Items.RAIL) || stack.is(Items.POWERED_RAIL) || stack.is(Items.DETECTOR_RAIL) || stack.is(Items.ACTIVATOR_RAIL);
+    }
+
     private void startXbowCart() {
         FindItemResult cart = InvUtils.findInHotbar(Items.TNT_MINECART);
         FindItemResult flint = InvUtils.findInHotbar(Items.FLINT_AND_STEEL);
@@ -67,7 +69,6 @@ public class XbowCart extends Module {
 
         if (!cart.found() || !flint.found() || !xbow.found()) return;
 
-        this.previousSlot = mc.player.getInventory().selected;
         this.stage = Stage.PLACE_RAIL;
         this.tickDelay = 0;
     }
@@ -75,9 +76,9 @@ public class XbowCart extends Module {
     private void executeStage() {
         switch (stage) {
             case PLACE_RAIL:
-                FindItemResult rail = InvUtils.findInHotbar(itemStack -> itemStack.getItem() instanceof RailItem);
+                FindItemResult rail = InvUtils.findInHotbar(this::isRail);
                 if (rail.found()) {
-                    InvUtils.swap(rail.slot(), false);
+                    InvUtils.swap(rail.slot(), true);
                 }
                 stage = Stage.PLACE_CART;
                 tickDelay = 1;
@@ -86,7 +87,7 @@ public class XbowCart extends Module {
             case PLACE_CART:
                 FindItemResult cart = InvUtils.findInHotbar(Items.TNT_MINECART);
                 if (cart.found()) {
-                    InvUtils.swap(cart.slot(), false);
+                    InvUtils.swap(cart.slot(), true);
                 }
                 stage = Stage.LIGHT_FIRE;
                 tickDelay = 1;
@@ -95,7 +96,7 @@ public class XbowCart extends Module {
             case LIGHT_FIRE:
                 FindItemResult flint = InvUtils.findInHotbar(Items.FLINT_AND_STEEL);
                 if (flint.found()) {
-                    InvUtils.swap(flint.slot(), false);
+                    InvUtils.swap(flint.slot(), true);
                 }
                 stage = Stage.READY_CROSSBOW;
                 tickDelay = 1;
@@ -116,11 +117,10 @@ public class XbowCart extends Module {
     }
 
     private void reset(boolean restoreSlot) {
-        if (restoreSlot && previousSlot != -1 && mc.player != null) {
-            InvUtils.swap(previousSlot, false);
+        if (restoreSlot && mc.player != null) {
+            InvUtils.swapBack();
         }
         this.stage = Stage.IDLE;
-        this.previousSlot = -1;
         this.tickDelay = 0;
     }
-                    }
+}
