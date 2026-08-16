@@ -4,6 +4,12 @@ plugins {
 
 val minecraftVersion = libs.versions.minecraft.get()
 
+repositories {
+    maven("https://maven.meteordev.org/releases")
+    maven("https://maven.meteordev.org/snapshots")
+    mavenCentral()
+}
+
 dependencies {
     minecraft(libs.minecraft)
     mappings(loom.officialMojangMappings())
