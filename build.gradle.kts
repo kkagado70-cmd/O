@@ -23,8 +23,10 @@ tasks {
         val properties = mapOf(
             "version" to project.version,
             "mc_version" to minecraftVersion,
+            "minecraft_version" to minecraftVersion,
             "jdk_version" to jdkVersion,
-            "jdk" to jdkVersion
+            "jdk" to jdkVersion,
+            "loader_version" to libs.versions.fabric.loader.get()
         )
 
         inputs.properties(properties)
