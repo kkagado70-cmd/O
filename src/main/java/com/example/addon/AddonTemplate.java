@@ -1,5 +1,6 @@
 package com.example.addon;
 
+import com.example.addon.modules.XbowCart;
 import meteordevelopment.meteorclient.addons.MeteorAddon;
 import meteordevelopment.meteorclient.systems.modules.Category;
 import meteordevelopment.meteorclient.systems.modules.Modules;
@@ -13,6 +14,8 @@ public class AddonTemplate extends MeteorAddon {
     @Override
     public void onInitialize() {
         LOG.info("Inicializando Xbow Cart Addon...");
+
+        // Registra o seu módulo XbowCart no menu do Meteor
         Modules.get().add(new XbowCart());
     }
 
