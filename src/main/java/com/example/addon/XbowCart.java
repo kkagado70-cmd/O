@@ -6,10 +6,10 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.player.FindItemResult;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.item.CrossbowItem;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.item.RailItem;
+import net.minecraft.world.item.CrossbowItem;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.RailItem;
 
 public class XbowCart extends Module {
 
@@ -41,10 +41,10 @@ public class XbowCart extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
-        boolean isLookingDown = mc.player.getPitch() >= 70.0f;
-        ItemStack mainHand = mc.player.getMainHandStack();
+        boolean isLookingDown = mc.player.getXRot() >= 70.0f;
+        ItemStack mainHand = mc.player.getMainHandItem();
         boolean isHoldingRail = mainHand.getItem() instanceof RailItem;
 
         if (isLookingDown && isHoldingRail && stage == Stage.IDLE) {
@@ -63,11 +63,11 @@ public class XbowCart extends Module {
     private void startXbowCart() {
         FindItemResult cart = InvUtils.findInHotbar(Items.TNT_MINECART);
         FindItemResult flint = InvUtils.findInHotbar(Items.FLINT_AND_STEEL);
-        FindItemResult xbow = InvUtils.findInHotbar(itemStack -> itemStack.isOf(Items.CROSSBOW) && CrossbowItem.isCharged(itemStack));
+        FindItemResult xbow = InvUtils.findInHotbar(itemStack -> itemStack.is(Items.CROSSBOW) && CrossbowItem.isCharged(itemStack));
 
         if (!cart.found() || !flint.found() || !xbow.found()) return;
 
-        this.previousSlot = mc.player.getInventory().selectedSlot;
+        this.previousSlot = mc.player.getInventory().selected;
         this.stage = Stage.PLACE_RAIL;
         this.tickDelay = 0;
     }
@@ -102,7 +102,7 @@ public class XbowCart extends Module {
                 break;
 
             case READY_CROSSBOW:
-                FindItemResult xbow = InvUtils.findInHotbar(itemStack -> itemStack.isOf(Items.CROSSBOW) && CrossbowItem.isCharged(itemStack));
+                FindItemResult xbow = InvUtils.findInHotbar(itemStack -> itemStack.is(Items.CROSSBOW) && CrossbowItem.isCharged(itemStack));
                 if (xbow.found()) {
                     InvUtils.swap(xbow.slot(), false);
                 }
@@ -123,4 +123,4 @@ public class XbowCart extends Module {
         this.previousSlot = -1;
         this.tickDelay = 0;
     }
-  }
+                    }
