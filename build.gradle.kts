@@ -3,6 +3,7 @@ plugins {
 }
 
 val minecraftVersion = libs.versions.minecraft.get()
+val jdkVersion = libs.versions.jdk.get()
 
 repositories {
     maven("https://maven.meteordev.org/releases")
@@ -21,7 +22,9 @@ tasks {
     processResources {
         val properties = mapOf(
             "version" to project.version,
-            "mc_version" to minecraftVersion
+            "mc_version" to minecraftVersion,
+            "jdk_version" to jdkVersion,
+            "jdk" to jdkVersion
         )
 
         inputs.properties(properties)
@@ -39,6 +42,6 @@ tasks {
 }
 
 java {
-    sourceCompatibility = JavaVersion.toVersion(libs.versions.jdk.get())
-    targetCompatibility = JavaVersion.toVersion(libs.versions.jdk.get())
+    sourceCompatibility = JavaVersion.toVersion(jdkVersion)
+    targetCompatibility = JavaVersion.toVersion(jdkVersion)
 }
