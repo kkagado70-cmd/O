@@ -35,16 +35,16 @@ public class XbowCart extends Module {
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
-    private final Setting<Boolean> grimBypass = sgGeneral.add(new BoolSetting.Builder()
-        .name("grim-polar-bypass")
-        .description("Verifica confirmacao de blocos no servidor e aplica timing humanizado com variacao.")
+    private final Setting<Boolean> antiCheatSafe = sgGeneral.add(new BoolSetting.Builder()
+        .name("anti-cheat-safe")
+        .description("Ativa validacao de pacotes, GCD e timing legitimo para bypass universal.")
         .defaultValue(true)
         .build()
     );
 
     private final Setting<Integer> minDelay = sgGeneral.add(new IntSetting.Builder()
-        .name("min-delay-ticks")
-        .description("Delay minimo entre acoes (1 tick = 50ms).")
+        .name("min-delay")
+        .description("Delay minimo em ticks entre acoes.")
         .defaultValue(1)
         .min(1)
         .max(3)
@@ -53,8 +53,8 @@ public class XbowCart extends Module {
     );
 
     private final Setting<Integer> maxDelay = sgGeneral.add(new IntSetting.Builder()
-        .name("max-delay-ticks")
-        .description("Delay maximo para variacao humana (impede flags de cadencia fixa).")
+        .name("max-delay")
+        .description("Delay maximo para variacao humana de rede.")
         .defaultValue(2)
         .min(1)
         .max(4)
@@ -62,9 +62,16 @@ public class XbowCart extends Module {
         .build()
     );
 
+    private final Setting<Boolean> preferCharged = sgGeneral.add(new BoolSetting.Builder()
+        .name("prefer-charged-xbow")
+        .description("Sempre prioriza a Besta que ja esta carregada na hotbar.")
+        .defaultValue(true)
+        .build()
+    );
+
     private final Setting<Boolean> autoShoot = sgGeneral.add(new BoolSetting.Builder()
         .name("auto-shoot")
-        .description("Dispara a besta automaticamente apos confirmar o alinhamento da mira.")
+        .description("Dispara a besta automaticamente apos alinhar com o fogo.")
         .defaultValue(true)
         .build()
     );
@@ -82,7 +89,7 @@ public class XbowCart extends Module {
     private BlockHitResult targetBlockHit = null;
 
     public XbowCart() {
-        super(Categories.Combat, "xbow-cart", "Xbow Cart com sincronizacao de pacotes e bypass de GrimAC/Polar.");
+        super(Categories.Combat, "xbow-cart", "Xbow Cart com calculo adaptativo de trajetoria e compatibilidade com Anti-Cheats.");
     }
 
     @Override
@@ -110,7 +117,7 @@ public class XbowCart extends Module {
 
         if (stage != Stage.IDLE) {
             timeoutTicks++;
-            if (timeoutTicks > 20) { // Se demorar mais de 1 segundo por lag de rede, cancela com seguranca
+            if (timeoutTicks > 25) { // Timeout de seguranca caso ocorra desync severo de rede
                 reset(true);
                 return;
             }
@@ -128,13 +135,15 @@ public class XbowCart extends Module {
     }
 
     private FindItemResult findBestCrossbow() {
-        FindItemResult charged = InvUtils.findInHotbar(stack -> stack.is(Items.CROSSBOW) && CrossbowItem.isCharged(stack));
-        if (charged.found()) return charged;
+        if (preferCharged.get()) {
+            FindItemResult charged = InvUtils.findInHotbar(stack -> stack.is(Items.CROSSBOW) && CrossbowItem.isCharged(stack));
+            if (charged.found()) return charged;
+        }
         return InvUtils.findInHotbar(stack -> stack.is(Items.CROSSBOW));
     }
 
     private int getRandomDelay() {
-        if (!grimBypass.get()) return minDelay.get();
+        if (!antiCheatSafe.get()) return minDelay.get();
         int min = Math.min(minDelay.get(), maxDelay.get());
         int max = Math.max(minDelay.get(), maxDelay.get());
         return ThreadLocalRandom.current().nextInt(min, max + 1);
@@ -145,7 +154,18 @@ public class XbowCart extends Module {
         FindItemResult flint = InvUtils.findInHotbar(Items.FLINT_AND_STEEL);
         FindItemResult xbow = findBestCrossbow();
 
-        if (!cart.found() || !flint.found() || !xbow.found()) return;
+        if (!cart.found()) {
+            ChatUtils.warning("XbowCart: Falta Carrinho de TNT na hotbar!");
+            return;
+        }
+        if (!flint.found()) {
+            ChatUtils.warning("XbowCart: Falta Isqueiro na hotbar!");
+            return;
+        }
+        if (!xbow.found()) {
+            ChatUtils.warning("XbowCart: Falta Besta na hotbar!");
+            return;
+        }
 
         this.targetBlockHit = hitResult;
         this.stage = Stage.PLACE_RAIL;
@@ -163,22 +183,24 @@ public class XbowCart extends Module {
         Direction clickedFace = targetBlockHit.getDirection();
         BlockPos placedRailPos = groundPos.relative(clickedFace);
 
-        // 1. Posição do Trilho
+        // Posicionamento do Trilho e do Carrinho
         BlockHitResult railHit = new BlockHitResult(targetBlockHit.getLocation(), clickedFace, groundPos, false);
-
-        // 2. Posição do Carrinho de TNT
         Vec3 railCenter = new Vec3(placedRailPos.getX() + 0.5, placedRailPos.getY() + 0.1, placedRailPos.getZ() + 0.5);
         BlockHitResult cartHit = new BlockHitResult(railCenter, Direction.UP, placedRailPos, false);
 
-        // 3. Posição do Fogo
+        // Posicionamento do Fogo (adaptativo: Chão vs Pilar Alto)
         Direction toPlayer = mc.player.getDirection().getOpposite();
-        BlockPos fireBasePos = groundPos.relative(toPlayer);
-        BlockHitResult fireHit = new BlockHitResult(
-            new Vec3(fireBasePos.getX() + 0.5, fireBasePos.getY() + 1.0, fireBasePos.getZ() + 0.5),
-            Direction.UP,
-            fireBasePos,
-            false
-        );
+        BlockHitResult fireHit;
+        boolean isHighPillar = groundPos.getY() >= mc.player.getBlockY() + 1;
+
+        if (isHighPillar) {
+            // Em pilares/torres: acende na face lateral da madeira voltada para o jogador
+            fireHit = new BlockHitResult(new Vec3(groundPos.getX() + 0.5, groundPos.getY() + 0.5, groundPos.getZ() + 0.5), toPlayer, groundPos, false);
+        } else {
+            // No chão: acende no bloco intermediário entre jogador e trilho
+            BlockPos fireBasePos = groundPos.relative(toPlayer);
+            fireHit = new BlockHitResult(new Vec3(fireBasePos.getX() + 0.5, fireBasePos.getY() + 1.0, fireBasePos.getZ() + 0.5), Direction.UP, fireBasePos, false);
+        }
 
         switch (stage) {
             case PLACE_RAIL:
@@ -187,18 +209,17 @@ public class XbowCart extends Module {
                     InvUtils.swap(rail.slot(), true);
                     interactBlock(railHit);
                 }
-                // Se o modo Grim/Polar estiver ativo, aguarda o trilho existir no mundo
-                stage = grimBypass.get() ? Stage.AWAIT_RAIL : Stage.PLACE_CART;
+                stage = antiCheatSafe.get() ? Stage.AWAIT_RAIL : Stage.PLACE_CART;
                 tickDelay = getRandomDelay();
                 break;
 
             case AWAIT_RAIL:
-                // Anti-Ghost: Só coloca o carrinho se o trilho REALMENTE estiver presente no mundo
+                // Anti-Ghost: Só avança se o trilho existir no mundo
                 if (mc.level.getBlockState(placedRailPos).getBlock() instanceof BaseRailBlock) {
                     stage = Stage.PLACE_CART;
                     tickDelay = 0;
                 } else {
-                    tickDelay = 1; // Espera o próximo tick de rede
+                    tickDelay = 1;
                 }
                 break;
 
@@ -227,9 +248,13 @@ public class XbowCart extends Module {
                 if (xbow.found()) {
                     InvUtils.swap(xbow.slot(), false);
 
-                    // Trajetória calculada para a base da TNT através do fogo
                     Vec3 eyePos = mc.player.getEyePosition();
-                    Vec3 cartTarget = new Vec3(placedRailPos.getX() + 0.5, placedRailPos.getY() + 0.15, placedRailPos.getZ() + 0.5);
+
+                    // CALCULO ADAPTATIVO DE ALTURA (Tower Cart vs Ground Cart):
+                    // Se estiver abaixo do carrinho (olhando para cima), mira em Y + 0.35 para nao colidir na quina do pilar.
+                    // Se estiver no nivel do chao ou acima, mira em Y + 0.15.
+                    double targetYOffset = (eyePos.y < placedRailPos.getY() + 0.2) ? 0.35 : 0.15;
+                    Vec3 cartTarget = new Vec3(placedRailPos.getX() + 0.5, placedRailPos.getY() + targetYOffset, placedRailPos.getZ() + 0.5);
 
                     double dx = cartTarget.x - eyePos.x;
                     double dy = cartTarget.y - eyePos.y;
@@ -239,14 +264,21 @@ public class XbowCart extends Module {
                     float targetYaw = (float) Math.toDegrees(Math.atan2(dz, dx)) - 90.0f;
                     float targetPitch = (float) -Math.toDegrees(Math.atan2(dy, dist));
 
-                    // Rotação com curva GCD legítima do Meteor antes de enviar o disparo
-                    Rotations.rotate(targetYaw, targetPitch, 100, () -> {
+                    if (antiCheatSafe.get()) {
+                        Rotations.rotate(targetYaw, targetPitch, 100, () -> {
+                            if (autoShoot.get()) {
+                                shootCrossbow();
+                            }
+                            reset(swapBack.get());
+                        });
+                        return;
+                    } else {
+                        mc.player.setYRot(targetYaw);
+                        mc.player.setXRot(targetPitch);
                         if (autoShoot.get()) {
                             shootCrossbow();
                         }
-                        reset(swapBack.get());
-                    });
-                    return;
+                    }
                 }
                 reset(swapBack.get());
                 break;
