@@ -11,6 +11,7 @@ import meteordevelopment.orbit.EventHandler;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.CrossbowItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.BlockHitResult;
@@ -29,6 +30,31 @@ public class XbowCart extends Module {
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
+    private final Setting<Boolean> smoothAim = sgGeneral.add(new BoolSetting.Builder()
+        .name("smooth-aim")
+        .description("Desliza a mira suavemente para parecer 100% legit em gravacoes.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<Double> aimSpeed = sgGeneral.add(new DoubleSetting.Builder()
+        .name("aim-speed")
+        .description("Velocidade da mira suave (graus por tick).")
+        .defaultValue(35.0)
+        .min(10.0)
+        .max(90.0)
+        .sliderRange(10.0, 90.0)
+        .visible(smoothAim::get)
+        .build()
+    );
+
+    private final Setting<Boolean> preferCharged = sgGeneral.add(new BoolSetting.Builder()
+        .name("prefer-charged-xbow")
+        .description("Sempre prioriza a Besta carregada na hotbar.")
+        .defaultValue(true)
+        .build()
+    );
+
     private final Setting<Integer> delay = sgGeneral.add(new IntSetting.Builder()
         .name("delay-ticks")
         .description("Delay em ticks entre cada acao.")
@@ -36,13 +62,6 @@ public class XbowCart extends Module {
         .min(0)
         .max(5)
         .sliderRange(0, 5)
-        .build()
-    );
-
-    private final Setting<Boolean> autoAim = sgGeneral.add(new BoolSetting.Builder()
-        .name("auto-aim-through-fire")
-        .description("Calcula o angulo exato para a flecha atravessar o fogo e atingir a base da TNT.")
-        .defaultValue(true)
         .build()
     );
 
@@ -72,7 +91,7 @@ public class XbowCart extends Module {
     private BlockHitResult targetBlockHit = null;
 
     public XbowCart() {
-        super(Categories.Combat, "xbow-cart", "Xbow Cart com calculo automatico de angulo e trajetoria atraves do fogo.");
+        super(Categories.Combat, "xbow-cart", "Xbow Cart com mira suave ultra-legit para gravacoes e prioridade de Besta.");
     }
 
     @Override
@@ -111,10 +130,18 @@ public class XbowCart extends Module {
         return stack.is(Items.RAIL) || stack.is(Items.POWERED_RAIL) || stack.is(Items.DETECTOR_RAIL) || stack.is(Items.ACTIVATOR_RAIL);
     }
 
+    private FindItemResult findBestCrossbow() {
+        if (preferCharged.get()) {
+            FindItemResult charged = InvUtils.findInHotbar(stack -> stack.is(Items.CROSSBOW) && CrossbowItem.isCharged(stack));
+            if (charged.found()) return charged;
+        }
+        return InvUtils.findInHotbar(stack -> stack.is(Items.CROSSBOW));
+    }
+
     private void startXbowCart(BlockHitResult hitResult) {
         FindItemResult cart = InvUtils.findInHotbar(Items.TNT_MINECART);
         FindItemResult flint = InvUtils.findInHotbar(Items.FLINT_AND_STEEL);
-        FindItemResult xbow = InvUtils.findInHotbar(itemStack -> itemStack.is(Items.CROSSBOW));
+        FindItemResult xbow = findBestCrossbow();
 
         if (!cart.found()) {
             ChatUtils.warning("XbowCart: Falta Carrinho de TNT na hotbar!");
@@ -144,22 +171,26 @@ public class XbowCart extends Module {
         Direction clickedFace = targetBlockHit.getDirection();
         BlockPos placedRailPos = groundPos.relative(clickedFace);
 
-        // 1. Posição do Trilho
+        // 1. Posicao do Trilho
         BlockHitResult railHit = new BlockHitResult(targetBlockHit.getLocation(), clickedFace, groundPos, false);
 
-        // 2. Posição do Carrinho de TNT
+        // 2. Posicao do Carrinho de TNT
         Vec3 railCenter = new Vec3(placedRailPos.getX() + 0.5, placedRailPos.getY() + 0.1, placedRailPos.getZ() + 0.5);
         BlockHitResult cartHit = new BlockHitResult(railCenter, Direction.UP, placedRailPos, false);
 
-        // 3. Posição do Fogo (no chão entre o jogador e o trilho)
+        // 3. Posicao do Fogo adaptativa (Chão ou Lateral de Pilar)
         Direction toPlayer = mc.player.getDirection().getOpposite();
-        BlockPos fireBasePos = groundPos.relative(toPlayer);
-        BlockHitResult fireHit = new BlockHitResult(
-            new Vec3(fireBasePos.getX() + 0.5, fireBasePos.getY() + 1.0, fireBasePos.getZ() + 0.5),
-            Direction.UP,
-            fireBasePos,
-            false
-        );
+        BlockHitResult fireHit;
+
+        boolean isHighPillar = groundPos.getY() >= mc.player.getBlockY() + 1;
+        if (isHighPillar) {
+            // Se for um pilar alto, acende na lateral do bloco voltada para o jogador
+            fireHit = new BlockHitResult(new Vec3(groundPos.getX() + 0.5, groundPos.getY() + 0.5, groundPos.getZ() + 0.5), toPlayer, groundPos, false);
+        } else {
+            // Se for no chão, acende no bloco entre você e o trilho
+            BlockPos fireBasePos = groundPos.relative(toPlayer);
+            fireHit = new BlockHitResult(new Vec3(fireBasePos.getX() + 0.5, fireBasePos.getY() + 1.0, fireBasePos.getZ() + 0.5), Direction.UP, fireBasePos, false);
+        }
 
         switch (stage) {
             case PLACE_RAIL:
@@ -193,23 +224,29 @@ public class XbowCart extends Module {
                 break;
 
             case AIM_AND_SHOOT:
-                FindItemResult xbow = InvUtils.findInHotbar(itemStack -> itemStack.is(Items.CROSSBOW));
+                FindItemResult xbow = findBestCrossbow();
                 if (xbow.found()) {
                     InvUtils.swap(xbow.slot(), false);
 
-                    if (autoAim.get()) {
-                        // CALCULO DE ANGULO: Mira na metade inferior da TNT (Y + 0.15) para atravessar o fogo
-                        Vec3 eyePos = mc.player.getEyePosition();
-                        Vec3 cartTarget = new Vec3(placedRailPos.getX() + 0.5, placedRailPos.getY() + 0.15, placedRailPos.getZ() + 0.5);
+                    // Calculo de mira na metade inferior da TNT atraves do fogo
+                    Vec3 eyePos = mc.player.getEyePosition();
+                    Vec3 cartTarget = new Vec3(placedRailPos.getX() + 0.5, placedRailPos.getY() + 0.15, placedRailPos.getZ() + 0.5);
 
-                        double dx = cartTarget.x - eyePos.x;
-                        double dy = cartTarget.y - eyePos.y;
-                        double dz = cartTarget.z - eyePos.z;
-                        double dist = Math.sqrt(dx * dx + dz * dz);
+                    double dx = cartTarget.x - eyePos.x;
+                    double dy = cartTarget.y - eyePos.y;
+                    double dz = cartTarget.z - eyePos.z;
+                    double dist = Math.sqrt(dx * dx + dz * dz);
 
-                        float targetYaw = (float) Math.toDegrees(Math.atan2(dz, dx)) - 90.0f;
-                        float targetPitch = (float) -Math.toDegrees(Math.atan2(dy, dist));
+                    float targetYaw = (float) Math.toDegrees(Math.atan2(dz, dx)) - 90.0f;
+                    float targetPitch = (float) -Math.toDegrees(Math.atan2(dy, dist));
 
+                    if (smoothAim.get()) {
+                        boolean aligned = smoothRotate(targetYaw, targetPitch);
+                        if (!aligned) {
+                            tickDelay = 1; // Continua girando suavemente ate alinhar
+                            return;
+                        }
+                    } else {
                         mc.player.setYRot(targetYaw);
                         mc.player.setXRot(targetPitch);
                     }
@@ -225,6 +262,33 @@ public class XbowCart extends Module {
                 reset(false);
                 break;
         }
+    }
+
+    private boolean smoothRotate(float targetYaw, float targetPitch) {
+        float currentYaw = mc.player.getYRot();
+        float currentPitch = mc.player.getXRot();
+
+        float yawDiff = wrapDegrees(targetYaw - currentYaw);
+        float pitchDiff = targetPitch - currentPitch;
+
+        float step = aimSpeed.get().floatValue();
+
+        if (Math.abs(yawDiff) <= step && Math.abs(pitchDiff) <= step) {
+            mc.player.setYRot(targetYaw);
+            mc.player.setXRot(targetPitch);
+            return true;
+        }
+
+        mc.player.setYRot(currentYaw + Math.signum(yawDiff) * Math.min(Math.abs(yawDiff), step));
+        mc.player.setXRot(currentPitch + Math.signum(pitchDiff) * Math.min(Math.abs(pitchDiff), step));
+        return false;
+    }
+
+    private float wrapDegrees(float value) {
+        float f = value % 360.0f;
+        if (f >= 180.0f) f -= 360.0f;
+        if (f < -180.0f) f += 360.0f;
+        return f;
     }
 
     private void interact(BlockHitResult hitResult) {
