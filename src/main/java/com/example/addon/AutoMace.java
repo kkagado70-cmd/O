@@ -37,7 +37,6 @@ public class AutoMace extends Module {
     private final Setting<SettingColor> fillColor = sgRender.add(new ColorSetting.Builder().name("fill-color").defaultValue(new SettingColor(225, 25, 25, 50)).build());
 
     private long nextAllowedActionTime = 0;
-    private int originalSlot = -1;
     private boolean isSwapped = false;
     private LivingEntity currentTarget = null;
     
@@ -81,11 +80,8 @@ public class AutoMace extends Module {
                 boolean preferDensity = mc.player.fallDistance > breachThreshold.get();
                 int bestMace = findBestMaceSlot(preferDensity);
                 if (bestMace != -1) {
-                    if (originalSlot == -1) originalSlot = mc.player.getInventory().selectedSlot;
-                    if (mc.player.getInventory().selectedSlot != bestMace) {
-                        mc.player.getInventory().selectedSlot = bestMace;
-                        isSwapped = true;
-                    }
+                    InvUtils.swap(bestMace, false);
+                    isSwapped = true;
                 }
             }
 
@@ -185,14 +181,13 @@ public class AutoMace extends Module {
     }
 
     private void resetState() {
-        if (isSwapped && originalSlot != -1 && mc.player != null) {
-            mc.player.getInventory().selectedSlot = originalSlot;
+        if (isSwapped && mc.player != null) {
+            InvUtils.swapBack();
         }
-        originalSlot = -1;
         isSwapped = false;
         currentTarget = null;
         smoothYaw = 0.0f;
         smoothPitch = 0.0f;
         tickSkipCounter = 0;
     }
-}
+            }
