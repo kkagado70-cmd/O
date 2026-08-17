@@ -1,4 +1,4 @@
-package meteordevelopment.meteorclient.systems.modules.combat;
+package com.example.addon.modules;
 
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.*;
