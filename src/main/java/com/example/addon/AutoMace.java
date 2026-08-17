@@ -1,4 +1,4 @@
-package com.example.addon.modules;
+package com.example.addon;
 
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
@@ -88,8 +88,8 @@ public class AutoMace extends Module {
 
     private void applyDivebombAim(LivingEntity target) {
         Vec3 targetCenter = target.getEyePosition();
-        float targetYaw = (float) Rotations.getYaw(targetCenter);
-        float targetPitch = (float) Rotations.getPitch(targetCenter);
+        double targetYaw = Rotations.getYaw(targetCenter);
+        double targetPitch = Rotations.getPitch(targetCenter);
 
         Rotations.rotate(targetYaw, targetPitch, maxRotationSpeed.get().intValue(), null);
     }
