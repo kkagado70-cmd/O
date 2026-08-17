@@ -30,14 +30,11 @@ public class AutoMace extends Module {
     private final Setting<Boolean> swapBack = sgGeneral.add(new BoolSetting.Builder().name("swap-back").defaultValue(true).build());
     private final Setting<Double> minFallDist = sgGeneral.add(new DoubleSetting.Builder().name("min-fall-distance").defaultValue(3.0).min(1.0).max(400.0).build());
     
-    // Regra rigorosa dos 7 blocos: Acima de 7 blocos usa Density, abaixo/igual usa Breach
     private final Setting<Double> breachThreshold = sgGeneral.add(new DoubleSetting.Builder().name("density-threshold-blocks").defaultValue(7.0).min(1.0).max(20.0).build());
-
-    // Configuração de alta velocidade para Divebomb (sem delay na queda)
-    private final Setting<Double> maxRotationSpeed = sgAim.add(new DoubleSetting.Builder().name("divebomb-rotation-speed").defaultValue(150.0).min(45.0).max(360.0).description("Velocidade máxima instantânea para não errar alvos em alta velocidade vertical.").build());
+    private final Setting<Double> maxRotationSpeed = sgAim.add(new DoubleSetting.Builder().name("divebomb-rotation-speed").defaultValue(150.0).min(45.0).max(360.0).build());
 
     private final Setting<Boolean> renderPred = sgRender.add(new BoolSetting.Builder().name("render-predictions").defaultValue(true).build());
-    private final Setting<SettingColor> fillColor = sgRender.add(new SettingColor.Builder().name("fill-color").defaultValue(new SettingColor(225, 25, 25, 50)).build());
+    private final Setting<SettingColor> fillColor = sgRender.add(new ColorSetting.Builder().name("fill-color").defaultValue(new SettingColor(225, 25, 25, 50)).build());
 
     private long lastAttackTime = 0;
     private int originalSlot = -1;
@@ -79,7 +76,6 @@ public class AutoMace extends Module {
                 }
             }
 
-            // Rotação de alta resposta otimizada para mergulhos verticais rápidos
             applyDivebombAim(currentTarget);
 
             if (mc.player.distanceTo(currentTarget) <= swingRange.get() && mc.options.keyAttack.isDown()) {
@@ -92,16 +88,15 @@ public class AutoMace extends Module {
 
     private void applyDivebombAim(LivingEntity target) {
         Vec3 targetCenter = target.getEyePosition();
-        float targetYaw = Rotations.getYaw(targetCenter);
-        float targetPitch = Rotations.getPitch(targetCenter);
+        float targetYaw = (float) Rotations.getYaw(targetCenter);
+        float targetPitch = (float) Rotations.getPitch(targetCenter);
 
-        // Rotação rápida porém blindada contra limites de pacotes do Grim/Vulcan
         Rotations.rotate(targetYaw, targetPitch, maxRotationSpeed.get().intValue(), null);
     }
 
     @EventHandler
     private void onRender3D(Render3DEvent event) {
-        if (!renderPred.getValue() || currentTarget == null) return;
+        if (!renderPred.get() || currentTarget == null) return;
         Vec3 predPos = currentTarget.position().add(currentTarget.getDeltaMovement());
         AABB box = currentTarget.getBoundingBox().move(predPos.subtract(currentTarget.position()));
         event.renderer.box(box, fillColor.get(), fillColor.get(), ShapeMode.Both, 0);
@@ -144,4 +139,4 @@ public class AutoMace extends Module {
         isSwapped = false;
         currentTarget = null;
     }
-      }
+}
