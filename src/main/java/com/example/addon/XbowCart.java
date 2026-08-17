@@ -139,4 +139,4 @@ public class XbowCart extends Module {
         targetBlockHit = null;
         tickTimer = 0;
     }
-                               }
+}
