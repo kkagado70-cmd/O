@@ -139,4 +139,4 @@ public class AutoMace extends Module {
         isSwapped = false;
         currentTarget = null;
     }
-}
+    }
