@@ -10,7 +10,6 @@ import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.CrossbowItem;
 import net.minecraft.world.item.ItemStack;
@@ -163,10 +162,6 @@ public class XbowCart extends Module {
         mc.player.xRotO = pitch;
         mc.player.yHeadRot = yaw;
         mc.player.yHeadRotO = yaw;
-
-        if (mc.getNetworkHandler() != null) {
-            mc.getNetworkHandler().sendPacket(new ServerboundMovePlayerPacket.Rot(yaw, pitch, mc.player.onGround()));
-        }
     }
 
     private void interactWithBlock(BlockHitResult hit) {
