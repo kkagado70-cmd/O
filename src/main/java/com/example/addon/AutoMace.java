@@ -7,9 +7,9 @@ import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Categories;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
+import meteordevelopment.meteorclient.utils.player.Rotations;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
@@ -18,11 +18,10 @@ import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import net.minecraft.util.Mth;
 
 public class AutoMace extends Module {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
-    private final SettingGroup sgAim = settings.createGroup("Grim Bypass Aim");
+    private final SettingGroup sgAim = settings.createGroup("High-Speed Divebomb Aim");
     private final SettingGroup sgRender = settings.createGroup("Render");
 
     private final Setting<Double> aimRange = sgGeneral.add(new DoubleSetting.Builder().name("vertical-search-range").defaultValue(350.0).min(10.0).max(500.0).build());
@@ -32,7 +31,7 @@ public class AutoMace extends Module {
     private final Setting<Double> minFallDist = sgGeneral.add(new DoubleSetting.Builder().name("min-fall-distance").defaultValue(3.0).min(1.0).max(400.0).build());
     
     private final Setting<Double> breachThreshold = sgGeneral.add(new DoubleSetting.Builder().name("density-threshold-blocks").defaultValue(7.0).min(1.0).max(20.0).build());
-    private final Setting<Double> maxRotationSpeed = sgAim.add(new DoubleSetting.Builder().name("rotation-speed").defaultValue(120.0).min(45.0).max(360.0).build());
+    private final Setting<Double> maxRotationSpeed = sgAim.add(new DoubleSetting.Builder().name("divebomb-rotation-speed").defaultValue(150.0).min(45.0).max(360.0).build());
 
     private final Setting<Boolean> renderPred = sgRender.add(new BoolSetting.Builder().name("render-predictions").defaultValue(true).build());
     private final Setting<SettingColor> fillColor = sgRender.add(new ColorSetting.Builder().name("fill-color").defaultValue(new SettingColor(225, 25, 25, 50)).build());
@@ -43,7 +42,7 @@ public class AutoMace extends Module {
     private LivingEntity currentTarget = null;
 
     public AutoMace() {
-        super(Categories.Combat, "auto-mace", "AutoMace com sincronizacao de pacotes para zerar flags de Failed Simulation no Grim.");
+        super(Categories.Combat, "auto-mace", "AutoMace veloz para divebombs com regra de 7 blocos e bypass total.");
     }
 
     @Override public void onActivate() { resetState(); }
@@ -65,7 +64,7 @@ public class AutoMace extends Module {
         boolean isFalling = mc.player.fallDistance >= minFallDist.get() && !mc.player.onGround() && !mc.player.isInWater();
 
         if (isFalling) {
-            if (System.currentTimeMillis() - lastAttackTime < 40) return;
+            if (System.currentTimeMillis() - lastAttackTime < 35) return;
 
             if (autoSwitch.get()) {
                 boolean preferDensity = mc.player.fallDistance > breachThreshold.get();
@@ -77,8 +76,7 @@ public class AutoMace extends Module {
                 }
             }
 
-            // Sincroniza a mira diretamente com o motor de movimento do cliente para evitar Failed Simulation
-            applySyncedAim(currentTarget);
+            applyDivebombAim(currentTarget);
 
             if (mc.player.distanceTo(currentTarget) <= swingRange.get() && mc.options.keyAttack.isDown()) {
                 executeAttack(currentTarget);
@@ -88,49 +86,12 @@ public class AutoMace extends Module {
         }
     }
 
-    private void applySyncedAim(LivingEntity target) {
+    private void applyDivebombAim(LivingEntity target) {
         Vec3 targetCenter = target.getEyePosition();
-        Vec3 eyePos = mc.player.getEyePosition();
+        double targetYaw = Rotations.getYaw(targetCenter);
+        double targetPitch = Rotations.getPitch(targetCenter);
 
-        double dx = targetCenter.x - eyePos.x;
-        double dy = targetCenter.y - eyePos.y;
-        double dz = targetCenter.z - eyePos.z;
-        double dist = Math.sqrt(dx * dx + dz * dz);
-
-        float targetYaw = (float) Math.toDegrees(Math.atan2(dz, dx)) - 90.0f;
-        float targetPitch = (float) -Math.toDegrees(Math.atan2(dy, dist));
-
-        float curYaw = mc.player.getYRot();
-        float curPitch = mc.player.getXRot();
-
-        float yawDiff = wrapAngle(targetYaw - curYaw);
-        float pitchDiff = targetPitch - curPitch;
-
-        float maxStep = maxRotationSpeed.get().floatValue();
-        float stepYaw = Math.max(-maxStep, Math.min(maxStep, yawDiff));
-        float stepPitch = Math.max(-maxStep, Math.min(maxStep, pitchDiff));
-
-        float finalYaw = curYaw + stepYaw;
-        float finalPitch = Math.max(-90.0f, Math.min(90.0f, curPitch + stepPitch));
-
-        mc.player.setYRot(finalYaw);
-        mc.player.setXRot(finalPitch);
-        mc.player.yRotO = finalYaw;
-        mc.player.xRotO = finalPitch;
-        mc.player.yHeadRot = finalYaw;
-        mc.player.yHeadRotO = finalYaw;
-
-        // Envio direto de pacote de rotação para atualizar a simulação do Grim no servidor
-        if (mc.getNetworkHandler() != null) {
-            mc.getNetworkHandler().sendPacket(new ServerboundMovePlayerPacket.Rot(finalYaw, finalPitch, mc.player.onGround()));
-        }
-    }
-
-    private float wrapAngle(float angle) {
-        float wrapped = angle % 360.0f;
-        if (wrapped >= 180.0f) wrapped -= 360.0f;
-        if (wrapped < -180.0f) wrapped += 360.0f;
-        return wrapped;
+        Rotations.rotate(targetYaw, targetPitch, maxRotationSpeed.get().intValue(), null);
     }
 
     @EventHandler
