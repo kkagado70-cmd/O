@@ -23,7 +23,7 @@ public class XbowCart extends Module {
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final Setting<Integer> actionDelay = sgGeneral.add(new IntSetting.Builder().name("action-delay-ticks").defaultValue(1).min(1).max(3).build());
-    private final Setting<Boolean> inputSimulation = sgGeneral.add(new BoolSetting.Builder().name("input-simulation").defaultValue(true).description("Simula estados reais de clique para burlar detecções de pacotes.").build());
+    private final Setting<Boolean> inputSimulation = sgGeneral.add(new BoolSetting.Builder().name("input-simulation").defaultValue(true).build());
 
     private Stage stage = Stage.IDLE;
     private int tickTimer = 0;
@@ -32,7 +32,7 @@ public class XbowCart extends Module {
     private float targetPitch = 0.0f;
 
     public XbowCart() {
-        super(Categories.Combat, "xbow-cart", "Xbow Cart com simulação de cliques de entrada e bypass total de pacotes.");
+        super(Categories.Combat, "xbow-cart", "Xbow Cart com simulacao de cliques e bypass total de pacotes.");
     }
 
     @Override public void onActivate() { reset(false); }
