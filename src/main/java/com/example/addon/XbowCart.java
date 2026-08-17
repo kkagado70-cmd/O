@@ -23,6 +23,7 @@ public class XbowCart extends Module {
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final Setting<Integer> actionDelay = sgGeneral.add(new IntSetting.Builder().name("action-delay-ticks").defaultValue(1).min(1).max(3).build());
+    private final Setting<Boolean> inputSimulation = sgGeneral.add(new BoolSetting.Builder().name("input-simulation").defaultValue(true).description("Simula estados reais de clique para burlar detecções de pacotes.").build());
 
     private Stage stage = Stage.IDLE;
     private int tickTimer = 0;
@@ -31,7 +32,7 @@ public class XbowCart extends Module {
     private float targetPitch = 0.0f;
 
     public XbowCart() {
-        super(Categories.Combat, "xbow-cart", "Xbow Cart otimizado para execucao profissional ultra rapida e 0 flags.");
+        super(Categories.Combat, "xbow-cart", "Xbow Cart com simulação de cliques de entrada e bypass total de pacotes.");
     }
 
     @Override public void onActivate() { reset(false); }
@@ -98,7 +99,7 @@ public class XbowCart extends Module {
                 FindItemResult rail = InvUtils.findInHotbar(this::isRail);
                 if (rail.found()) {
                     InvUtils.swap(rail.slot(), true);
-                    interactWithBlock(railHit);
+                    simulateClickAction(railHit);
                 }
                 stage = Stage.PLACE_CART;
                 tickTimer = actionDelay.get();
@@ -107,7 +108,7 @@ public class XbowCart extends Module {
                 FindItemResult cart = InvUtils.findInHotbar(Items.TNT_MINECART);
                 if (cart.found()) {
                     InvUtils.swap(cart.slot(), false);
-                    interactWithBlock(cartHit);
+                    simulateClickAction(cartHit);
                 }
                 stage = Stage.LIGHT_FIRE;
                 tickTimer = actionDelay.get();
@@ -116,7 +117,7 @@ public class XbowCart extends Module {
                 FindItemResult flint = InvUtils.findInHotbar(Items.FLINT_AND_STEEL);
                 if (flint.found()) {
                     InvUtils.swap(flint.slot(), false);
-                    interactWithBlock(fireHit);
+                    simulateClickAction(fireHit);
                 }
                 computeAim(railPos);
                 stage = Stage.PRO_AIMING;
@@ -134,8 +135,15 @@ public class XbowCart extends Module {
                 }
             }
             case DISCHARGE -> {
-                mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
-                mc.player.swing(InteractionHand.MAIN_HAND);
+                if (inputSimulation.get()) {
+                    mc.options.keyUse.setDown(true);
+                    mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
+                    mc.player.swing(InteractionHand.MAIN_HAND);
+                    mc.options.keyUse.setDown(false);
+                } else {
+                    mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
+                    mc.player.swing(InteractionHand.MAIN_HAND);
+                }
                 reset(true);
             }
             default -> reset(false);
@@ -164,9 +172,16 @@ public class XbowCart extends Module {
         mc.player.yHeadRotO = yaw;
     }
 
-    private void interactWithBlock(BlockHitResult hit) {
-        mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
-        mc.player.swing(InteractionHand.MAIN_HAND);
+    private void simulateClickAction(BlockHitResult hit) {
+        if (inputSimulation.get()) {
+            mc.options.keyUse.setDown(true);
+            mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
+            mc.player.swing(InteractionHand.MAIN_HAND);
+            mc.options.keyUse.setDown(false);
+        } else {
+            mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
+            mc.player.swing(InteractionHand.MAIN_HAND);
+        }
     }
 
     private void reset(boolean restore) {
