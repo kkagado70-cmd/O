@@ -1,22 +1,25 @@
 package com.example.addon;
 
-import meteordevelopment.meteorclient.addons.MeteorAddon;
-import meteordevelopment.meteorclient.systems.modules.Category;
 import meteordevelopment.meteorclient.systems.modules.Modules;
+import com.mojang.logging.LogUtils;
+import meteordevelopment.meteorclient.addons.MeteorAddon;
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class AddonTemplate extends MeteorAddon {
-    public static final Logger LOG = LoggerFactory.getLogger("XbowAddon");
-    public static final Category CATEGORY = new Category("CPVP");
+    public static final Logger LOG = LogUtils.getLogger();
 
     @Override
     public void onInitialize() {
-        LOG.info("Inicializando Xbow Cart Addon...");
+        LOG.info("Initializing AddonTemplate");
 
-        // Registra o seu módulo XbowCart no menu do Meteor
+        // Registra os módulos na raiz do pacote
         Modules.get().add(new AutoMace());
-Modules.get().add(new XbowCart());
+        Modules.get().add(new XbowCart());
+    }
+
+    @Override
+    public void onRegisterCategories() {
+        // Categorias
     }
 
     @Override
