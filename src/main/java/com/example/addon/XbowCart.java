@@ -31,12 +31,17 @@ public class XbowCart extends Module {
         .build()
     );
 
+    private final Setting<Boolean> inputSimulation = sgGeneral.add(new BoolSetting.Builder()
+        .name("input-simulation")
+        .defaultValue(true)
+        .build()
+    );
+
     private Stage stage = Stage.IDLE;
     private int tickTimer = 0;
     private BlockHitResult targetBlockHit = null;
     private float targetYaw = 0.0f;
     private float targetPitch = 0.0f;
-    private int originalSlot = -1;
 
     public XbowCart() {
         super(Categories.Combat, "xbow-cart", "Xbow Cart totalmente blindado contra flags e falhas de inventario.");
@@ -87,7 +92,6 @@ public class XbowCart extends Module {
             return;
         }
 
-        this.originalSlot = mc.player.getInventory().selected;
         this.targetBlockHit = hit;
         this.stage = Stage.PLACE_RAIL;
         this.tickTimer = 0;
@@ -110,9 +114,8 @@ public class XbowCart extends Module {
             case PLACE_RAIL -> {
                 FindItemResult rail = InvUtils.findInHotbar(this::isRail);
                 if (rail.found()) {
-                    mc.player.getInventory().selected = rail.slot();
-                    mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, railHit);
-                    mc.player.swing(InteractionHand.MAIN_HAND);
+                    InvUtils.swap(rail.slot(), false);
+                    simulateClickAction(railHit);
                 }
                 stage = Stage.PLACE_CART;
                 tickTimer = dynamicDelay;
@@ -120,9 +123,8 @@ public class XbowCart extends Module {
             case PLACE_CART -> {
                 FindItemResult cart = InvUtils.findInHotbar(Items.TNT_MINECART);
                 if (cart.found()) {
-                    mc.player.getInventory().selected = cart.slot();
-                    mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, cartHit);
-                    mc.player.swing(InteractionHand.MAIN_HAND);
+                    InvUtils.swap(cart.slot(), false);
+                    simulateClickAction(cartHit);
                 }
                 stage = Stage.LIGHT_FIRE;
                 tickTimer = dynamicDelay;
@@ -130,9 +132,8 @@ public class XbowCart extends Module {
             case LIGHT_FIRE -> {
                 FindItemResult flint = InvUtils.findInHotbar(Items.FLINT_AND_STEEL);
                 if (flint.found()) {
-                    mc.player.getInventory().selected = flint.slot();
-                    mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, fireHit);
-                    mc.player.swing(InteractionHand.MAIN_HAND);
+                    InvUtils.swap(flint.slot(), false);
+                    simulateClickAction(fireHit);
                 }
                 computeLegitAim(railPos);
                 stage = Stage.LEGIT_AIMING;
@@ -141,7 +142,7 @@ public class XbowCart extends Module {
             case LEGIT_AIMING -> {
                 FindItemResult xbow = resolveCrossbow();
                 if (xbow.found()) {
-                    mc.player.getInventory().selected = xbow.slot();
+                    InvUtils.swap(xbow.slot(), false);
                     applyLegitCamera(targetYaw, targetPitch);
                     stage = Stage.DISCHARGE;
                     tickTimer = 1;
@@ -150,11 +151,30 @@ public class XbowCart extends Module {
                 }
             }
             case DISCHARGE -> {
-                mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
-                mc.player.swing(InteractionHand.MAIN_HAND);
+                if (inputSimulation.get()) {
+                    mc.options.keyUse.setDown(true);
+                    mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
+                    mc.player.swing(InteractionHand.MAIN_HAND);
+                    mc.options.keyUse.setDown(false);
+                } else {
+                    mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
+                    mc.player.swing(InteractionHand.MAIN_HAND);
+                }
                 reset(true);
             }
             default -> reset(false);
+        }
+    }
+
+    private void simulateClickAction(BlockHitResult hit) {
+        if (inputSimulation.get()) {
+            mc.options.keyUse.setDown(true);
+            mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
+            mc.player.swing(InteractionHand.MAIN_HAND);
+            mc.options.keyUse.setDown(false);
+        } else {
+            mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
+            mc.player.swing(InteractionHand.MAIN_HAND);
         }
     }
 
@@ -199,12 +219,11 @@ public class XbowCart extends Module {
     }
 
     private void reset(boolean restore) {
-        if (restore && originalSlot != -1 && mc.player != null) {
-            mc.player.getInventory().selected = originalSlot;
+        if (restore && mc.player != null) {
+            InvUtils.swapBack();
         }
         this.stage = Stage.IDLE;
         this.targetBlockHit = null;
         this.tickTimer = 0;
-        this.originalSlot = -1;
     }
 }
