@@ -15,7 +15,8 @@ public class AddonTemplate extends MeteorAddon {
         LOG.info("Inicializando Xbow Cart Addon...");
 
         // Registra o seu módulo XbowCart no menu do Meteor
-        Modules.get().add(new XbowCart());
+        Modules.get().add(new AutoMace());
+Modules.get().add(new XbowCart());
     }
 
     @Override
