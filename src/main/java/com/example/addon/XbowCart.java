@@ -36,10 +36,9 @@ public class XbowCart extends Module {
     private BlockHitResult targetBlockHit = null;
     private float targetYaw = 0.0f;
     private float targetPitch = 0.0f;
-    private int originalSlot = -1;
 
     public XbowCart() {
-        super(Categories.Combat, "xbow-cart", "Xbow Cart totalmente blindado contra flags e falhas de fogo.");
+        super(Categories.Combat, "xbow-cart", "Xbow Cart totalmente blindado contra flags e falhas de inventario.");
     }
 
     @Override public void onActivate() { reset(false); }
@@ -87,7 +86,6 @@ public class XbowCart extends Module {
             return;
         }
 
-        this.originalSlot = mc.player.getInventory().selectedSlot;
         this.targetBlockHit = hit;
         this.stage = Stage.PLACE_RAIL;
         this.tickTimer = 0;
@@ -110,7 +108,7 @@ public class XbowCart extends Module {
             case PLACE_RAIL -> {
                 FindItemResult rail = InvUtils.findInHotbar(this::isRail);
                 if (rail.found()) {
-                    mc.player.getInventory().selectedSlot = rail.slot();
+                    InvUtils.swap(rail.slot(), false);
                     mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, railHit);
                     mc.player.swing(InteractionHand.MAIN_HAND);
                 }
@@ -120,7 +118,7 @@ public class XbowCart extends Module {
             case PLACE_CART -> {
                 FindItemResult cart = InvUtils.findInHotbar(Items.TNT_MINECART);
                 if (cart.found()) {
-                    mc.player.getInventory().selectedSlot = cart.slot();
+                    InvUtils.swap(cart.slot(), false);
                     mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, cartHit);
                     mc.player.swing(InteractionHand.MAIN_HAND);
                 }
@@ -130,7 +128,7 @@ public class XbowCart extends Module {
             case LIGHT_FIRE -> {
                 FindItemResult flint = InvUtils.findInHotbar(Items.FLINT_AND_STEEL);
                 if (flint.found()) {
-                    mc.player.getInventory().selectedSlot = flint.slot();
+                    InvUtils.swap(flint.slot(), false);
                     mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, fireHit);
                     mc.player.swing(InteractionHand.MAIN_HAND);
                 }
@@ -141,7 +139,7 @@ public class XbowCart extends Module {
             case LEGIT_AIMING -> {
                 FindItemResult xbow = resolveCrossbow();
                 if (xbow.found()) {
-                    mc.player.getInventory().selectedSlot = xbow.slot();
+                    InvUtils.swap(xbow.slot(), false);
                     applyLegitCamera(targetYaw, targetPitch);
                     stage = Stage.DISCHARGE;
                     tickTimer = 1;
@@ -199,12 +197,11 @@ public class XbowCart extends Module {
     }
 
     private void reset(boolean restore) {
-        if (restore && originalSlot != -1 && mc.player != null) {
-            mc.player.getInventory().selectedSlot = originalSlot;
+        if (restore && mc.player != null) {
+            InvUtils.swapBack();
         }
         this.stage = Stage.IDLE;
         this.targetBlockHit = null;
         this.tickTimer = 0;
-        this.originalSlot = -1;
     }
-                        }
+}
