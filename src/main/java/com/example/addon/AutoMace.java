@@ -23,34 +23,36 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 public class AutoMace extends Module {
-    public enum Stage { IDLE, SLAM }
+    public enum Stage { IDLE, BREAK_SHIELD, SWAP_MACE, SLAM_ATTACK, RESTORE_SLOT }
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
-    private final SettingGroup sgAim = settings.createGroup("Aim & GCD Smoothing");
+    private final SettingGroup sgLegit = settings.createGroup("Legit & Anti-Cheat");
     private final SettingGroup sgRender = settings.createGroup("Render");
 
     private final Setting<Double> searchRange = sgGeneral.add(new DoubleSetting.Builder().name("vertical-search-range").defaultValue(350.0).min(10.0).max(500.0).build());
-    private final Setting<Double> swingRange = sgGeneral.add(new DoubleSetting.Builder().name("max-reach").defaultValue(2.95).min(1.0).max(3.0).build());
+    private final Setting<Double> swingRange = sgGeneral.add(new DoubleSetting.Builder().name("max-reach").defaultValue(2.95).min(1.0).max(3.0).description("Alcance de ataque estritamente legitimo.").build());
     private final Setting<Boolean> stunSlam = sgGeneral.add(new BoolSetting.Builder().name("stun-slam").defaultValue(true).description("Quebra o escudo com machado antes do golpe de Mace.").build());
     private final Setting<Boolean> autoSwitch = sgGeneral.add(new BoolSetting.Builder().name("auto-switch").defaultValue(true).build());
-    private final Setting<Boolean> swapBack = sgGeneral.add(new BoolSetting.Builder().name("swap-back-on-attack").defaultValue(true).build());
+    private final Setting<Boolean> swapBack = sgGeneral.add(new BoolSetting.Builder().name("swap-back").defaultValue(true).build());
     private final Setting<Double> minFallDist = sgGeneral.add(new DoubleSetting.Builder().name("min-fall-distance").defaultValue(3.0).min(1.0).max(400.0).build());
     private final Setting<Double> breachThreshold = sgGeneral.add(new DoubleSetting.Builder().name("density-threshold-blocks").defaultValue(7.0).min(1.0).max(20.0).description("Acima de 7 blocos usa Density; abaixo usa Breach.").build());
 
-    // Mira fluida e rápida com simulação de GCD de mouse
-    private final Setting<Double> maxTurnSpeed = sgAim.add(new DoubleSetting.Builder().name("max-turn-speed").defaultValue(120.0).min(40.0).max(360.0).build());
-    private final Setting<Boolean> gcdBypass = sgAim.add(new BoolSetting.Builder().name("gcd-mouse-simulation").defaultValue(true).description("Quantiza os movimentos para simular o sensor do mouse.").build());
+    private final Setting<Integer> comboDelayTicks = sgLegit.add(new IntSetting.Builder().name("combo-delay-ticks").defaultValue(2).min(1).max(4).description("Atraso humano entre o Machado e o Mace.").build());
+    private final Setting<Double> mouseSmoothing = sgLegit.add(new DoubleSetting.Builder().name("mouse-smoothing").defaultValue(0.45).min(0.1).max(0.85).sliderRange(0.1, 0.85).build());
 
     private final Setting<Boolean> renderPred = sgRender.add(new BoolSetting.Builder().name("render-predictions").defaultValue(true).build());
     private final Setting<SettingColor> fillColor = sgRender.add(new ColorSetting.Builder().name("fill-color").defaultValue(new SettingColor(225, 25, 25, 50)).build());
 
     private Stage stage = Stage.IDLE;
-    private long lastAttackTime = 0;
+    private int tickTimer = 0;
+    private int originalSlot = -1;
     private LivingEntity currentTarget = null;
-    private boolean swappedForCombo = false;
+
+    private float smoothYaw = 0.0f;
+    private float smoothPitch = 0.0f;
 
     public AutoMace() {
-        super(Categories.Combat, "auto-mace", "AutoMace com Stun Slam (Machado + Mace), mira GCD natural e troca automatica.");
+        super(Categories.Combat, "auto-mace", "AutoMace com Stun Slam legitimo, mira suave e troca de slot perfeita.");
     }
 
     @Override public void onActivate() { resetState(); }
@@ -60,7 +62,11 @@ public class AutoMace extends Module {
     private void onTick(TickEvent.Pre event) {
         if (mc.player == null || mc.level == null) return;
 
-        // Busca de alvo abaixo do jogador durante a queda
+        if (tickTimer > 0) {
+            tickTimer--;
+            return;
+        }
+
         currentTarget = mc.level.getEntitiesOfClass(LivingEntity.class, mc.player.getBoundingBox().inflate(6.0, searchRange.get(), 6.0),
             e -> e != mc.player && e.isAlive() && !e.isDeadOrDying() && mc.player.getY() > e.getY()
         ).stream().min(java.util.Comparator.comparingDouble(e -> mc.player.distanceToSqr(e))).orElse(null);
@@ -73,105 +79,130 @@ public class AutoMace extends Module {
         boolean isFalling = mc.player.fallDistance >= minFallDist.get() && !mc.player.onGround() && !mc.player.isInWater();
 
         if (isFalling) {
-            // Aplica mira rápida e fluida ajustada por GCD
-            applyGcdHumanizedAim(currentTarget);
+            // Mira orgânica fluida no peito do alvo
+            applyOrganicSmoothAim(currentTarget);
 
-            if (mc.player.distanceTo(currentTarget) <= swingRange.get()) {
-                if (System.currentTimeMillis() - lastAttackTime < 35) return;
+            double distance = mc.player.distanceTo(currentTarget);
 
-                // PASSO 1: Verifica se o alvo está usando escudo para executar o Stun
-                boolean isShielding = false;
-                if (currentTarget instanceof Player p) {
-                    isShielding = p.isUsingItem() && p.getUseItem().getItem() instanceof ShieldItem;
-                }
-
-                if (stunSlam.get() && isShielding && stage == Stage.IDLE) {
-                    FindItemResult axe = InvUtils.findInHotbar(s -> s.getItem() instanceof AxeItem);
-                    if (axe.found()) {
-                        InvUtils.swap(axe.slot(), false);
-                        mc.gameMode.attack(mc.player, currentTarget);
-                        mc.player.swing(InteractionHand.MAIN_HAND);
-                        swappedForCombo = true;
-                        stage = Stage.SLAM;
-                        return;
-                    }
-                }
-
-                // PASSO 2: Troca para o Mace ideal (Density se > 7 blocos; Breach se <= 7 blocos)
-                if (autoSwitch.get()) {
-                    boolean preferDensity = mc.player.fallDistance > breachThreshold.get();
-                    int bestMace = findBestMaceSlot(preferDensity);
-                    if (bestMace != -1) {
-                        InvUtils.swap(bestMace, false);
-                        swappedForCombo = true;
-                    }
-                }
-
-                // Executa o golpe final (Slam)
-                mc.gameMode.attack(mc.player, currentTarget);
-                mc.player.swing(InteractionHand.MAIN_HAND);
-                lastAttackTime = System.currentTimeMillis();
-
-                // PASSO 3: Switch Back imediato para o slot original
-                if (swapBack.get() && swappedForCombo) {
-                    InvUtils.swapBack();
-                    swappedForCombo = false;
-                }
-                stage = Stage.IDLE;
+            // Execução estritamente dentro do alcance legítimo (<= 2.95 blocos)
+            if (distance <= swingRange.get()) {
+                processComboLogic();
             }
         } else if (mc.player.onGround() || mc.player.fallDistance <= 0.3f) {
             resetState();
         }
     }
 
-    private void applyGcdHumanizedAim(LivingEntity target) {
-        Vec3 targetCenter = target.getEyePosition();
-        Vec3 eyePos = mc.player.getEyePosition();
+    private void processComboLogic() {
+        if (currentTarget == null) return;
 
-        double dx = targetCenter.x - eyePos.x;
-        double dy = targetCenter.y - eyePos.y;
-        double dz = targetCenter.z - eyePos.z;
+        boolean isShielding = false;
+        if (currentTarget instanceof Player p) {
+            isShielding = p.isUsingItem() && p.getUseItem().getItem() instanceof ShieldItem;
+        }
+
+        int delay = Math.max(1, comboDelayTicks.get());
+
+        switch (stage) {
+            case IDLE -> {
+                if (originalSlot == -1) {
+                    originalSlot = mc.player.getInventory().selected;
+                }
+
+                if (stunSlam.get() && isShielding) {
+                    FindItemResult axe = InvUtils.findInHotbar(s -> s.getItem() instanceof AxeItem);
+                    if (axe.found()) {
+                        InvUtils.swap(axe.slot(), false);
+                        mc.gameMode.attack(mc.player, currentTarget);
+                        mc.player.swing(InteractionHand.MAIN_HAND);
+                        stage = Stage.SWAP_MACE;
+                        tickTimer = delay;
+                        return;
+                    }
+                }
+                stage = Stage.SWAP_MACE;
+                tickTimer = 0;
+            }
+            case SWAP_MACE -> {
+                if (autoSwitch.get()) {
+                    boolean preferDensity = mc.player.fallDistance > breachThreshold.get();
+                    int bestMace = findBestMaceSlot(preferDensity);
+                    if (bestMace != -1) {
+                        InvUtils.swap(bestMace, false);
+                    }
+                }
+                stage = Stage.SLAM_ATTACK;
+                tickTimer = 1;
+            }
+            case SLAM_ATTACK -> {
+                mc.gameMode.attack(mc.player, currentTarget);
+                mc.player.swing(InteractionHand.MAIN_HAND);
+                stage = Stage.RESTORE_SLOT;
+                tickTimer = delay;
+            }
+            case RESTORE_SLOT -> {
+                resetState();
+            }
+        }
+    }
+
+    private void applyOrganicSmoothAim(LivingEntity target) {
+        // Mira no peito do alvo com ruído estocástico (não trava fixo em um único pixel)
+        double noiseX = (Math.random() - 0.5) * 0.05;
+        double noiseY = (Math.random() - 0.5) * 0.04;
+        double noiseZ = (Math.random() - 0.5) * 0.05;
+
+        Vec3 eyePos = mc.player.getEyePosition();
+        Vec3 targetPoint = new Vec3(
+            target.getX() + noiseX,
+            target.getY() + (target.getBbHeight() * 0.55) + noiseY,
+            target.getZ() + noiseZ
+        );
+
+        double dx = targetPoint.x - eyePos.x;
+        double dy = targetPoint.y - eyePos.y;
+        double dz = targetPoint.z - eyePos.z;
         double dist = Math.sqrt(dx * dx + dz * dz);
 
         float targetYaw = (float) Math.toDegrees(Math.atan2(dz, dx)) - 90.0f;
         float targetPitch = (float) -Math.toDegrees(Math.atan2(dy, dist));
 
-        float curYaw = mc.player.getYRot();
-        float curPitch = mc.player.getXRot();
-
-        float yawDiff = wrapAngle(targetYaw - curYaw);
-        float pitchDiff = targetPitch - curPitch;
-
-        // Interpolação dinamicamente acelerada na queda
-        float maxStep = maxTurnSpeed.get().floatValue();
-        float stepYaw = Math.max(-maxStep, Math.min(maxStep, yawDiff * 0.8f));
-        float stepPitch = Math.max(-maxStep, Math.min(maxStep, pitchDiff * 0.8f));
-
-        float newYaw = curYaw + stepYaw;
-        float newPitch = Math.max(-90.0f, Math.min(90.0f, curPitch + stepPitch));
-
-        // Simulação de passos de sensibilidade de mouse (GCD) para burlar o GrimAC
-        if (gcdBypass.get()) {
-            double sensValue = mc.options.sensitivity().get();
-            double sens = sensValue * 0.6 + 0.2;
-            double gcd = sens * sens * sens * 1.2;
-
-            float deltaYaw = newYaw - curYaw;
-            float deltaPitch = newPitch - curPitch;
-
-            deltaYaw = (float) (Math.round(deltaYaw / gcd) * gcd);
-            deltaPitch = (float) (Math.round(deltaPitch / gcd) * gcd);
-
-            newYaw = curYaw + deltaYaw;
-            newPitch = curPitch + deltaPitch;
+        if (smoothYaw == 0.0f && smoothPitch == 0.0f) {
+            smoothYaw = mc.player.getYRot();
+            smoothPitch = mc.player.getXRot();
         }
 
-        mc.player.setYRot(newYaw);
-        mc.player.setXRot(newPitch);
-        mc.player.yRotO = newYaw;
-        mc.player.xRotO = newPitch;
-        mc.player.yHeadRot = newYaw;
-        mc.player.yHeadRotO = newYaw;
+        float yawDiff = wrapAngle(targetYaw - smoothYaw);
+        float pitchDiff = targetPitch - smoothPitch;
+
+        // Interpolação suave e rápida sem trava artificial
+        double smooth = mouseSmoothing.get() + (Math.random() - 0.5) * 0.04;
+        smooth = Math.max(0.1, Math.min(0.85, smooth));
+
+        float stepYaw = yawDiff * (float)(1.0 - smooth);
+        float stepPitch = pitchDiff * (float)(1.0 - smooth);
+
+        float maxStep = 38.0f;
+        stepYaw = Math.max(-maxStep, Math.min(maxStep, stepYaw));
+        stepPitch = Math.max(-maxStep, Math.min(maxStep, stepPitch));
+
+        // Simulação de passos de sensibilidade de mouse (GCD)
+        double sensValue = mc.options.sensitivity().get();
+        double sens = sensValue * 0.6 + 0.2;
+        double gcd = sens * sens * sens * 1.2;
+
+        stepYaw = (float) (Math.round(stepYaw / gcd) * gcd);
+        stepPitch = (float) (Math.round(stepPitch / gcd) * gcd);
+
+        smoothYaw += stepYaw;
+        smoothPitch = Math.max(-90.0f, Math.min(90.0f, smoothPitch + stepPitch));
+
+        mc.player.setYRot(smoothYaw);
+        mc.player.setXRot(smoothPitch);
+        mc.player.yRotO = smoothYaw;
+        mc.player.xRotO = smoothPitch;
+        mc.player.yHeadRot = smoothYaw;
+        mc.player.yHeadRotO = smoothYaw;
     }
 
     private float wrapAngle(float angle) {
@@ -213,11 +244,14 @@ public class AutoMace extends Module {
     }
 
     private void resetState() {
-        if (mc.player != null && swappedForCombo && swapBack.get()) {
-            InvUtils.swapBack();
+        if (swapBack.get() && originalSlot != -1 && mc.player != null) {
+            InvUtils.swap(originalSlot, false);
         }
-        swappedForCombo = false;
         stage = Stage.IDLE;
+        originalSlot = -1;
         currentTarget = null;
+        smoothYaw = 0.0f;
+        smoothPitch = 0.0f;
+        tickTimer = 0;
     }
 }
