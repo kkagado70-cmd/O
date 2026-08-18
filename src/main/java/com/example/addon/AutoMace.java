@@ -26,19 +26,19 @@ public class AutoMace extends Module {
     public enum Stage { IDLE, BREAK_SHIELD, SWAP_MACE, SLAM_ATTACK, RESTORE_SLOT }
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
-    private final SettingGroup sgLegit = settings.createGroup("Legit & Anti-Cheat");
+    private final SettingGroup sgLegit = settings.createGroup("Vulcan & Anti-Cheat");
     private final SettingGroup sgRender = settings.createGroup("Render");
 
     private final Setting<Double> searchRange = sgGeneral.add(new DoubleSetting.Builder().name("vertical-search-range").defaultValue(350.0).min(10.0).max(500.0).build());
-    private final Setting<Double> swingRange = sgGeneral.add(new DoubleSetting.Builder().name("max-reach").defaultValue(2.95).min(1.0).max(3.0).description("Alcance de ataque estritamente legitimo.").build());
+    private final Setting<Double> swingRange = sgGeneral.add(new DoubleSetting.Builder().name("max-reach").defaultValue(2.85).min(1.0).max(3.0).description("Alcance seguro contra flags de Reach do Vulcan.").build());
     private final Setting<Boolean> stunSlam = sgGeneral.add(new BoolSetting.Builder().name("stun-slam").defaultValue(true).description("Quebra o escudo com machado antes do golpe de Mace.").build());
     private final Setting<Boolean> autoSwitch = sgGeneral.add(new BoolSetting.Builder().name("auto-switch").defaultValue(true).build());
     private final Setting<Boolean> swapBack = sgGeneral.add(new BoolSetting.Builder().name("swap-back").defaultValue(true).build());
     private final Setting<Double> minFallDist = sgGeneral.add(new BoolSetting.Builder().name("min-fall-distance").defaultValue(3.0).min(1.0).max(400.0).build());
-    private final Setting<Double> breachThreshold = sgGeneral.add(new BoolSetting.Builder().name("density-threshold-blocks").defaultValue(7.0).min(1.0).max(20.0).description("Acima de 7 blocos usa Density; abaixo usa Breach.").build());
+    private final Setting<Double> breachThreshold = sgGeneral.add(new BoolSetting.Builder().name("density-threshold-blocks").defaultValue(7.0).min(1.0).max(20.0).build());
 
-    private final Setting<Integer> comboDelayTicks = sgLegit.add(new IntSetting.Builder().name("combo-delay-ticks").defaultValue(2).min(1).max(4).description("Atraso humano entre o Machado e o Mace.").build());
-    private final Setting<Double> mouseSmoothing = sgLegit.add(new IntSetting.Builder().name("mouse-smoothing").defaultValue(0.45).min(0.1).max(0.85).sliderRange(0.1, 0.85).build());
+    private final Setting<Integer> comboDelayTicks = sgLegit.add(new IntSetting.Builder().name("combo-delay-ticks").defaultValue(2).min(1).max(4).description("Atraso estrito para evitar desync de inventário.").build());
+    private final Setting<Double> rotationStep = sgLegit.add(new DoubleSetting.Builder().name("vulcan-rotation-step").defaultValue(45.0).min(10.0).max(90.0).description("Limita a velocidade de snap para zerar flags de Aim/Angle.").build());
 
     private final Setting<Boolean> renderPred = sgRender.add(new BoolSetting.Builder().name("render-predictions").defaultValue(true).build());
     private final Setting<SettingColor> fillColor = sgRender.add(new ColorSetting.Builder().name("fill-color").defaultValue(new SettingColor(225, 25, 25, 50)).build());
@@ -52,7 +52,7 @@ public class AutoMace extends Module {
     private float smoothPitch = 0.0f;
 
     public AutoMace() {
-        super(Categories.Combat, "auto-mace", "AutoMace com Stun Slam legitimo, mira suave e troca de slot perfeita.");
+        super(Categories.Combat, "auto-mace", "AutoMace otimizado com limitador de delta para bypass no Vulcan.");
     }
 
     @Override public void onActivate() { resetState(); }
@@ -79,7 +79,7 @@ public class AutoMace extends Module {
         boolean isFalling = mc.player.fallDistance >= minFallDist.get() && !mc.player.onGround() && !mc.player.isInWater();
 
         if (isFalling) {
-            applyOrganicSmoothAim(currentTarget);
+            applyVulcanSafeAim(currentTarget);
 
             double distance = mc.player.distanceTo(currentTarget);
 
@@ -104,7 +104,7 @@ public class AutoMace extends Module {
         switch (stage) {
             case IDLE -> {
                 if (originalSlot == -1) {
-                    originalSlot = mc.player.getInventory().selectedSlot;
+                    originalSlot = mc.player.getInventory().selected;
                 }
 
                 if (stunSlam.get() && isShielding) {
@@ -130,7 +130,7 @@ public class AutoMace extends Module {
                     }
                 }
                 stage = Stage.SLAM_ATTACK;
-                tickTimer = 1;
+                tickTimer = 1; // Pequena pausa de segurança para sincronizar o inventário com o servidor
             }
             case SLAM_ATTACK -> {
                 mc.gameMode.attack(mc.player, currentTarget);
@@ -144,17 +144,9 @@ public class AutoMace extends Module {
         }
     }
 
-    private void applyOrganicSmoothAim(LivingEntity target) {
-        double noiseX = (Math.random() - 0.5) * 0.05;
-        double noiseY = (Math.random() - 0.5) * 0.04;
-        double noiseZ = (Math.random() - 0.5) * 0.05;
-
+    private void applyVulcanSafeAim(LivingEntity target) {
         Vec3 eyePos = mc.player.getEyePosition();
-        Vec3 targetPoint = new Vec3(
-            target.getX() + noiseX,
-            target.getY() + (target.getBbHeight() * 0.55) + noiseY,
-            target.getZ() + noiseZ
-        );
+        Vec3 targetPoint = target.getBoundingBox().getCenter();
 
         double dx = targetPoint.x - eyePos.x;
         double dy = targetPoint.y - eyePos.y;
@@ -172,22 +164,10 @@ public class AutoMace extends Module {
         float yawDiff = wrapAngle(targetYaw - smoothYaw);
         float pitchDiff = targetPitch - smoothPitch;
 
-        double smooth = mouseSmoothing.get() + (Math.random() - 0.5) * 0.04;
-        smooth = Math.max(0.1, Math.min(0.85, smooth));
-
-        float stepYaw = yawDiff * (float)(1.0 - smooth);
-        float stepPitch = pitchDiff * (float)(1.0 - smooth);
-
-        float maxStep = 38.0f;
-        stepYaw = Math.max(-maxStep, Math.min(maxStep, stepYaw));
-        stepPitch = Math.max(-maxStep, Math.min(maxStep, stepPitch));
-
-        double sensValue = mc.options.sensitivity().get();
-        double sens = sensValue * 0.6 + 0.2;
-        double gcd = sens * sens * sens * 1.2;
-
-        stepYaw = (float) (Math.round(stepYaw / gcd) * gcd);
-        stepPitch = (float) (Math.round(stepPitch / gcd) * gcd);
+        // Limita a velocidade máxima de rotação por tick para prevenir flags de Angle/AimAssist do Vulcan
+        float maxStep = (float) rotationStep.get();
+        float stepYaw = Math.max(-maxStep, Math.min(maxStep, yawDiff));
+        float stepPitch = Math.max(-maxStep, Math.min(maxStep, pitchDiff));
 
         smoothYaw += stepYaw;
         smoothPitch = Math.max(-90.0f, Math.min(90.0f, smoothPitch + stepPitch));
@@ -239,7 +219,7 @@ public class AutoMace extends Module {
     }
 
     private void resetState() {
-        if (swapBack.get() && originalSlot != -1 && mc.player != null) {
+        if (swapBack.get()  && originalSlot != -1 && mc.player != null) {
             InvUtils.swap(originalSlot, false);
         }
         stage = Stage.IDLE;
