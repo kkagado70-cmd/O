@@ -79,12 +79,10 @@ public class AutoMace extends Module {
         boolean isFalling = mc.player.fallDistance >= minFallDist.get() && !mc.player.onGround() && !mc.player.isInWater();
 
         if (isFalling) {
-            // Mira orgânica fluida no peito do alvo
             applyOrganicSmoothAim(currentTarget);
 
             double distance = mc.player.distanceTo(currentTarget);
 
-            // Execução estritamente dentro do alcance legítimo (<= 2.95 blocos)
             if (distance <= swingRange.get()) {
                 processComboLogic();
             }
@@ -106,7 +104,7 @@ public class AutoMace extends Module {
         switch (stage) {
             case IDLE -> {
                 if (originalSlot == -1) {
-                    originalSlot = mc.player.getInventory().selected;
+                    originalSlot = mc.player.getInventory().selectedSlot;
                 }
 
                 if (stunSlam.get() && isShielding) {
@@ -147,7 +145,6 @@ public class AutoMace extends Module {
     }
 
     private void applyOrganicSmoothAim(LivingEntity target) {
-        // Mira no peito do alvo com ruído estocástico (não trava fixo em um único pixel)
         double noiseX = (Math.random() - 0.5) * 0.05;
         double noiseY = (Math.random() - 0.5) * 0.04;
         double noiseZ = (Math.random() - 0.5) * 0.05;
@@ -175,7 +172,6 @@ public class AutoMace extends Module {
         float yawDiff = wrapAngle(targetYaw - smoothYaw);
         float pitchDiff = targetPitch - smoothPitch;
 
-        // Interpolação suave e rápida sem trava artificial
         double smooth = mouseSmoothing.get() + (Math.random() - 0.5) * 0.04;
         smooth = Math.max(0.1, Math.min(0.85, smooth));
 
@@ -186,7 +182,6 @@ public class AutoMace extends Module {
         stepYaw = Math.max(-maxStep, Math.min(maxStep, stepYaw));
         stepPitch = Math.max(-maxStep, Math.min(maxStep, stepPitch));
 
-        // Simulação de passos de sensibilidade de mouse (GCD)
         double sensValue = mc.options.sensitivity().get();
         double sens = sensValue * 0.6 + 0.2;
         double gcd = sens * sens * sens * 1.2;
