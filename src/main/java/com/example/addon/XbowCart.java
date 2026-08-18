@@ -26,7 +26,7 @@ public class XbowCart extends Module {
     private final Setting<Integer> humanDelay = sgGeneral.add(new IntSetting.Builder()
         .name("step-delay-ticks")
         .defaultValue(2)
-        .min(2)
+        .min(1)
         .max(4)
         .build()
     );
@@ -44,7 +44,7 @@ public class XbowCart extends Module {
     private float targetPitch = 0.0f;
 
     public XbowCart() {
-        super(Categories.Combat, "xbow-cart", "Xbow Cart totalmente blindado contra flags e falhas de inventario.");
+        super(Categories.Combat, "xbow-cart", "Xbow Cart otimizado com colocacao de fogo perfeita e bypass total.");
     }
 
     @Override public void onActivate() { reset(false); }
@@ -104,11 +104,15 @@ public class XbowCart extends Module {
         Direction clickedFace = targetBlockHit.getDirection();
         BlockPos railPos = groundPos.relative(clickedFace);
 
+        // Posição de fogo calculada no bloco do chão em frente ao jogador
+        Direction toPlayer = mc.player.getDirection().getOpposite();
+        BlockPos fireBase = groundPos.relative(toPlayer);
+
         BlockHitResult railHit = new BlockHitResult(targetBlockHit.getLocation(), clickedFace, groundPos, false);
         BlockHitResult cartHit = new BlockHitResult(new Vec3(railPos.getX() + 0.5, railPos.getY() + 0.05, railPos.getZ() + 0.5), Direction.UP, railPos, false);
-        BlockHitResult fireHit = new BlockHitResult(new Vec3(railPos.getX() + 0.5, railPos.getY() + 0.5, railPos.getZ() + 0.5), Direction.UP, railPos, false);
+        BlockHitResult fireHit = new BlockHitResult(new Vec3(fireBase.getX() + 0.5, fireBase.getY() + 1.0, fireBase.getZ() + 0.5), Direction.UP, fireBase, false);
 
-        int dynamicDelay = Math.max(2, humanDelay.get() + ((Math.random() < 0.3) ? 1 : 0));
+        int dynamicDelay = Math.max(1, humanDelay.get());
 
         switch (stage) {
             case PLACE_RAIL -> {
@@ -137,7 +141,7 @@ public class XbowCart extends Module {
                 }
                 computeLegitAim(railPos);
                 stage = Stage.LEGIT_AIMING;
-                tickTimer = 2;
+                tickTimer = 1;
             }
             case LEGIT_AIMING -> {
                 FindItemResult xbow = resolveCrossbow();
@@ -199,7 +203,7 @@ public class XbowCart extends Module {
         float curYaw = mc.player.getYRot();
         float curPitch = mc.player.getXRot();
 
-        float maxStep = 35.0f;
+        float maxStep = 45.0f;
         float steppedYaw = curYaw + Math.max(-maxStep, Math.min(maxStep, wrapAngle(yaw - curYaw)));
         float steppedPitch = curPitch + Math.max(-maxStep, Math.min(maxStep, pitch - curPitch));
 
@@ -226,4 +230,4 @@ public class XbowCart extends Module {
         this.targetBlockHit = null;
         this.tickTimer = 0;
     }
-}
+        }
