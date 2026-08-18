@@ -34,11 +34,11 @@ public class AutoMace extends Module {
     private final Setting<Boolean> stunSlam = sgGeneral.add(new BoolSetting.Builder().name("stun-slam").defaultValue(true).description("Quebra o escudo com machado antes do golpe de Mace.").build());
     private final Setting<Boolean> autoSwitch = sgGeneral.add(new BoolSetting.Builder().name("auto-switch").defaultValue(true).build());
     private final Setting<Boolean> swapBack = sgGeneral.add(new BoolSetting.Builder().name("swap-back").defaultValue(true).build());
-    private final Setting<Double> minFallDist = sgGeneral.add(new DoubleSetting.Builder().name("min-fall-distance").defaultValue(3.0).min(1.0).max(400.0).build());
-    private final Setting<Double> breachThreshold = sgGeneral.add(new DoubleSetting.Builder().name("density-threshold-blocks").defaultValue(7.0).min(1.0).max(20.0).description("Acima de 7 blocos usa Density; abaixo usa Breach.").build());
+    private final Setting<Double> minFallDist = sgGeneral.add(new BoolSetting.Builder().name("min-fall-distance").defaultValue(3.0).min(1.0).max(400.0).build());
+    private final Setting<Double> breachThreshold = sgGeneral.add(new BoolSetting.Builder().name("density-threshold-blocks").defaultValue(7.0).min(1.0).max(20.0).description("Acima de 7 blocos usa Density; abaixo usa Breach.").build());
 
     private final Setting<Integer> comboDelayTicks = sgLegit.add(new IntSetting.Builder().name("combo-delay-ticks").defaultValue(2).min(1).max(4).description("Atraso humano entre o Machado e o Mace.").build());
-    private final Setting<Double> mouseSmoothing = sgLegit.add(new DoubleSetting.Builder().name("mouse-smoothing").defaultValue(0.45).min(0.1).max(0.85).sliderRange(0.1, 0.85).build());
+    private final Setting<Double> mouseSmoothing = sgLegit.add(new IntSetting.Builder().name("mouse-smoothing").defaultValue(0.45).min(0.1).max(0.85).sliderRange(0.1, 0.85).build());
 
     private final Setting<Boolean> renderPred = sgRender.add(new BoolSetting.Builder().name("render-predictions").defaultValue(true).build());
     private final Setting<SettingColor> fillColor = sgRender.add(new ColorSetting.Builder().name("fill-color").defaultValue(new SettingColor(225, 25, 25, 50)).build());
