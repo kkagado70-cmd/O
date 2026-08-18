@@ -8,7 +8,6 @@ import meteordevelopment.meteorclient.systems.modules.Categories;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.player.FindItemResult;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
-import meteordevelopment.meteorclient.utils.player.Rotations;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.world.InteractionHand;
@@ -24,7 +23,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 public class AutoMace extends Module {
-    public enum Stage { IDLE, STUN, SLAM }
+    public enum Stage { IDLE, SLAM }
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgAim = settings.createGroup("Aim & GCD Smoothing");
@@ -153,7 +152,8 @@ public class AutoMace extends Module {
 
         // Simulação de passos de sensibilidade de mouse (GCD) para burlar o GrimAC
         if (gcdBypass.get()) {
-            double sens = mc.options.getMouseSensitivity().get() * 0.6 + 0.2;
+            double sensValue = mc.options.sensitivity.get();
+            double sens = sensValue * 0.6 + 0.2;
             double gcd = sens * sens * sens * 1.2;
 
             float deltaYaw = newYaw - curYaw;
