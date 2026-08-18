@@ -20,32 +20,32 @@ import net.minecraft.world.phys.Vec3;
 
 public class AutoMace extends Module {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
-    private final SettingGroup sgLegit = settings.createGroup("Anti-Heuristic & Zero-Flag");
+    private final SettingGroup sgAim = settings.createGroup("Aim Fast & Smooth");
     private final SettingGroup sgRender = settings.createGroup("Render");
 
     private final Setting<Double> aimRange = sgGeneral.add(new DoubleSetting.Builder().name("vertical-search-range").defaultValue(350.0).min(10.0).max(500.0).build());
     private final Setting<Double> swingRange = sgGeneral.add(new DoubleSetting.Builder().name("max-reach").defaultValue(2.95).min(1.0).max(3.0).build());
     private final Setting<Boolean> autoSwitch = sgGeneral.add(new BoolSetting.Builder().name("auto-switch").defaultValue(true).build());
-    private final Setting<Boolean> swapBack = sgGeneral.add(new BoolSetting.Builder().name("swap-back").defaultValue(true).build());
+    private final Setting<Boolean> swapBack = sgGeneral.add(new BoolSetting.Builder().name("swap-back-on-attack").defaultValue(true).description("Troca de volta para o slot anterior imediatamente ao atacar.").build());
     private final Setting<Double> minFallDist = sgGeneral.add(new DoubleSetting.Builder().name("min-fall-distance").defaultValue(3.0).min(1.0).max(400.0).build());
     
-    private final Setting<Double> breachThreshold = sgGeneral.add(new DoubleSetting.Builder().name("density-threshold-blocks").defaultValue(7.0).min(1.0).max(20.0).description("Acima de 7 blocos usa Density; abaixo usa Breach.").build());
-    private final Setting<Integer> baseReactionMs = sgLegit.add(new IntSetting.Builder().name("reaction-delay-ms").defaultValue(80).min(40).max(200).build());
-    private final Setting<Double> humanSmooth = sgLegit.add(new DoubleSetting.Builder().name("mouse-smoothing").defaultValue(0.45).min(0.1).max(0.8).sliderRange(0.1, 0.8).build());
+    private final Setting<Double> breachThreshold = sgGeneral.add(new DoubleSetting.Builder().name("density-threshold-blocks").defaultValue(7.0).min(1.0).max(20.0).description("Acima de 7 blocos usa Density; abaixo/igual usa Breach.").build());
+    
+    // Configurações de mira rápida e suave otimizada para Divebomb
+    private final Setting<Double> aimSpeed = sgAim.add(new DoubleSetting.Builder().name("aim-response-speed").defaultValue(160.0).min(60.0).max(360.0).description("Velocidade de mira acelerada para acompanhar quedas rapidas.").build());
 
     private final Setting<Boolean> renderPred = sgRender.add(new BoolSetting.Builder().name("render-predictions").defaultValue(true).build());
     private final Setting<SettingColor> fillColor = sgRender.add(new ColorSetting.Builder().name("fill-color").defaultValue(new SettingColor(225, 25, 25, 50)).build());
 
-    private long nextAllowedActionTime = 0;
+    private long lastAttackTime = 0;
     private boolean isSwapped = false;
     private LivingEntity currentTarget = null;
     
     private float smoothYaw = 0.0f;
     private float smoothPitch = 0.0f;
-    private int tickSkipCounter = 0;
 
     public AutoMace() {
-        super(Categories.Combat, "auto-mace", "AutoMace blindado contra todas as checagens e 100% livre de flags.");
+        super(Categories.Combat, "auto-mace", "AutoMace veloz para divebombs com switch back imediato ao atacar.");
     }
 
     @Override public void onActivate() { resetState(); }
@@ -54,12 +54,6 @@ public class AutoMace extends Module {
     @EventHandler
     private void onTick(TickEvent.Pre event) {
         if (mc.player == null || mc.level == null) return;
-
-        if (tickSkipCounter > 0) {
-            tickSkipCounter--;
-            return;
-        }
-        if (Math.random() < 0.1) tickSkipCounter = (int)(Math.random() * 2);
 
         currentTarget = mc.level.getEntitiesOfClass(LivingEntity.class, mc.player.getBoundingBox().inflate(6.0, aimRange.get(), 6.0), 
             e -> e != mc.player && e.isAlive() && !e.isDeadOrDying() && mc.player.getY() > e.getY()
@@ -73,8 +67,7 @@ public class AutoMace extends Module {
         boolean isFalling = mc.player.fallDistance >= minFallDist.get() && !mc.player.onGround() && !mc.player.isInWater();
 
         if (isFalling) {
-            long dynamicCooldown = baseReactionMs.get() + (long)(Math.random() * 50);
-            if (System.currentTimeMillis() < nextAllowedActionTime) return;
+            if (System.currentTimeMillis() - lastAttackTime < 35) return;
 
             if (autoSwitch.get()) {
                 boolean preferDensity = mc.player.fallDistance > breachThreshold.get();
@@ -85,18 +78,17 @@ public class AutoMace extends Module {
                 }
             }
 
-            applyHumanizedTracking(currentTarget);
+            applyFastSmoothAim(currentTarget);
 
             if (mc.player.distanceTo(currentTarget) <= swingRange.get() && mc.options.keyAttack.isDown()) {
-                executeLegitAttack(currentTarget);
-                nextAllowedActionTime = System.currentTimeMillis() + dynamicCooldown;
+                executeAttack(currentTarget);
             }
         } else if (isSwapped && swapBack.get() && (mc.player.onGround() || mc.player.fallDistance <= 0.3f)) {
             resetState();
         }
     }
 
-    private void applyHumanizedTracking(LivingEntity target) {
+    private void applyFastSmoothAim(LivingEntity target) {
         Vec3 targetCenter = target.getEyePosition();
         Vec3 eyePos = mc.player.getEyePosition();
 
@@ -116,13 +108,11 @@ public class AutoMace extends Module {
         float yawDiff = wrapAngle(targetYaw - smoothYaw);
         float pitchDiff = targetPitch - smoothPitch;
 
-        double smoothingFactor = humanSmooth.get() + (Math.random() - 0.5) * 0.05;
-        smoothingFactor = Math.max(0.1, Math.min(0.85, smoothingFactor));
+        // Interpolação responsiva acelerada (75% da distância por tick com trava de velocidade máxima)
+        float stepYaw = yawDiff * 0.75f;
+        float stepPitch = pitchDiff * 0.75f;
 
-        float stepYaw = yawDiff * (float)(1.0 - smoothingFactor);
-        float stepPitch = pitchDiff * (float)(1.0 - smoothingFactor);
-
-        float maxStep = 30.0f + (float)((Math.random() - 0.5) * 4.0);
+        float maxStep = aimSpeed.get().floatValue();
         stepYaw = Math.max(-maxStep, Math.min(maxStep, stepYaw));
         stepPitch = Math.max(-maxStep, Math.min(maxStep, stepPitch));
 
@@ -152,9 +142,15 @@ public class AutoMace extends Module {
         event.renderer.box(box, fillColor.get(), fillColor.get(), ShapeMode.Both, 0);
     }
 
-    private void executeLegitAttack(LivingEntity target) {
+    private void executeAttack(LivingEntity target) {
         mc.gameMode.attack(mc.player, target);
         mc.player.swing(InteractionHand.MAIN_HAND);
+        lastAttackTime = System.currentTimeMillis();
+
+        // Faz o switch back imediatamente ao golpear o inimigo
+        if (swapBack.get() && isSwapped) {
+            resetState();
+        }
     }
 
     private int findBestMaceSlot(boolean preferDensity) {
@@ -188,6 +184,5 @@ public class AutoMace extends Module {
         currentTarget = null;
         smoothYaw = 0.0f;
         smoothPitch = 0.0f;
-        tickSkipCounter = 0;
     }
-            }
+}
