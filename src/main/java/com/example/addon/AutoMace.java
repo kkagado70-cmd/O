@@ -152,7 +152,7 @@ public class AutoMace extends Module {
 
         // Simulação de passos de sensibilidade de mouse (GCD) para burlar o GrimAC
         if (gcdBypass.get()) {
-            double sensValue = mc.options.sensitivity.get();
+            double sensValue = mc.options.sensitivity().get();
             double sens = sensValue * 0.6 + 0.2;
             double gcd = sens * sens * sens * 1.2;
 
